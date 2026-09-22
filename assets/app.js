@@ -1,0 +1,513 @@
+/* ============================================================
+   Portal Zubex — Shell común (sesión, permisos, UI)
+   Se carga en TODAS las páginas del portal.
+   ============================================================ */
+(function (global) {
+  'use strict';
+
+  const API = global.ZX_API;
+  const VERSION = '1.7.0';
+
+  /* ---------------- Tipografía de marca ----------------
+     El manual de marca pide Poppins con fallback a Segoe UI. Cargarla con un
+     <link> en el <head> BLOQUEA el renderizado: si la red de planta filtra o
+     ralentiza fonts.googleapis.com, la pantalla se queda en blanco esperando.
+     Por eso se inyecta después de pintar y con tiempo límite: si no llega,
+     la app se ve con Segoe UI y nadie se queda esperando. */
+  (function cargarTipografia() {
+    try {
+      const l = document.createElement('link');
+      l.rel = 'stylesheet';
+      l.href = 'https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap';
+      l.media = 'print';                       // no bloquea el primer render
+      const corte = setTimeout(() => { l.remove(); }, 2500);
+      l.onload = () => { clearTimeout(corte); l.media = 'all'; };
+      l.onerror = () => { clearTimeout(corte); l.remove(); };
+      (document.head || document.documentElement).appendChild(l);
+    } catch (e) { /* sin tipografía de marca: se usa el fallback del CSS */ }
+  })();
+
+  /* ---------------- Módulos y permisos ----------------
+     Espejo de la configuración del servidor. Sirve para no mostrar
+     lo que el usuario no puede usar; el servidor debe volver a
+     validarlo en cada petición. */
+  const MODULOS = [
+    { id: 'inicio',     nombre: 'Inicio',            ico: '⌂', url: 'index.html',       roles: '*' },
+
+    /* Reactivado. Llevaba meses desactivado (activo: false); si algo se ve
+       raro aquí, es lo primero a revisar — no se volvió a probar hasta ahora.
+       Universal: todos tienen esto, sin importar nivel ni perfil. */
+    { id: 'vacaciones', nombre: 'Vacaciones',        ico: '🌴', url: 'vacaciones.html', roles: '*',
+      desc: 'Solicita vacaciones y banco de horas, consulta tu saldo y el calendario del equipo.' },
+
+    { id: 'medico',     nombre: 'Servicio médico',   ico: '🩺', url: 'medico.html',     roles: '*',
+      desc: 'Tu historia clínica, tu expediente ocupacional y el resultado de tus consultas.' },
+    /* Perfil-gated: sólo quien tenga un perfil con 'analisis' entre sus
+       módulos (ver PERFILES en data.demo.js). Sin roles fijos aquí — se
+       resuelve en vivo contra el store, por eso Administración puede
+       crear perfiles nuevos y dárselo sin tocar este archivo. */
+    { id: 'analisis',   nombre: 'Análisis clínicos', ico: '🧪', url: 'analisis.html',
+      desc: 'Etapa 1 · SQF: resultados de los análisis anuales, desviaciones y seguimiento médico hasta el alta.' },
+    { id: 'citas',      nombre: 'Citas médicas',     ico: '📅', url: 'citas.html',      roles: '*',
+      desc: 'Revisa la disponibilidad del médico de empresa y agenda tu cita.' },
+    /* Aptitud es el único módulo con DOS caminos de acceso: por perfil
+       (medico/vigilancia → planta completa) o por nivel (nivelExtra:
+       'supervisor' → sólo el equipo propio). Ver puede() y soloEquipo en
+       page-aptitud.js. */
+    { id: 'aptitud',    nombre: 'Aptitud y restricciones', ico: '🦺', url: 'aptitud.html', nivelExtra: 'supervisor',
+      desc: 'Aptitud laboral, restricciones y recomendaciones por puesto. Sin información clínica.' },
+    { id: 'indicadores', nombre: 'Indicadores',      ico: '📈', url: 'indicadores.html',
+      desc: 'Tablero de salud ocupacional con datos agregados, sin datos clínicos individuales.' },
+    { id: 'rrhh',       nombre: 'Recursos Humanos',  ico: '🗂️', url: 'rrhh.html',
+      desc: 'Movimientos RHF-34, maestro de colaboradores y expediente documental.' },
+    { id: 'admin',      nombre: 'Administración',    ico: '⚙️', url: 'admin.html',
+      desc: 'Usuarios, perfiles y permisos de acceso, y bitácora de auditoría del sistema.' },
+
+    /* Nuevo (aprendido en Medico ZX): aviso de privacidad con consentimiento
+       versionado y solicitudes ARCO. roles:'*' porque todos deben poder
+       leerlo, otorgar/revocar su consentimiento y ejercer sus derechos;
+       el panel de "quién consintió" dentro de la misma página se muestra
+       sólo a medico/admin (ver page-privacidad.js). */
+    { id: 'privacidad', nombre: 'Aviso de privacidad', ico: '🔒', url: 'privacidad.html', roles: '*',
+      desc: 'Consulta el aviso de privacidad, otorga o revoca tu consentimiento y ejerce tus derechos ARCO.' }
+  ];
+
+  const moduloActivo = (m) => m && m.activo !== false;
+
+  /* `persona` es cualquier objeto con .nivel y .perfil — la sesión, o un
+     empleado tomado de la lista. Antes recibía sólo un string de rol;
+     ahora resuelve el perfil en vivo contra el store (perfilesSync), por
+     eso un perfil creado desde Administración funciona sin tocar código. */
+  function puede(persona, moduloId) {
+    const m = MODULOS.find(x => x.id === moduloId);
+    if (!m || !moduloActivo(m) || !persona) return false;
+    if (m.roles === '*') return true;
+    if (m.nivelExtra && persona.nivel === m.nivelExtra) return true;
+    const perfiles = (global.ZX_API && global.ZX_API.perfilesSync) ? global.ZX_API.perfilesSync() : [];
+    const p = perfiles.find(x => x.id === persona.perfil);
+    return !!(p && p.modulos.indexOf(moduloId) >= 0);
+  }
+  /* Módulos visibles en menús y matrices */
+  const modulosVisibles = () => MODULOS.filter(moduloActivo);
+
+  const NIVEL_NOMBRE = (nivel) => (global.ZX_DEMO && ZX_DEMO.NIVELES[nivel] ? ZX_DEMO.NIVELES[nivel].nombre : nivel);
+  const PERFIL_NOMBRE = (perfilId) => {
+    const perfiles = (global.ZX_API && global.ZX_API.perfilesSync) ? global.ZX_API.perfilesSync() : [];
+    const p = perfiles.find(x => x.id === perfilId);
+    return p ? p.nombre : perfilId;
+  };
+  const ACCESO_TEXTO = (persona) => {
+    const n = NIVEL_NOMBRE(persona.nivel);
+    return (persona.perfil && persona.perfil !== 'ninguno') ? n + ' · ' + PERFIL_NOMBRE(persona.perfil) : n;
+  };
+  const esAprobador = (persona) => ['coordinador', 'supervisor'].indexOf((persona || {}).nivel) >= 0;
+  const esClinico = (persona) => (persona || {}).perfil === 'medico';
+  const esRRHH = (persona) => (persona || {}).perfil === 'rrhh';
+  const esVigilancia = (persona) => (persona || {}).perfil === 'vigilancia';
+  const esAdmin = (persona) => (persona || {}).perfil === 'admin';
+
+  /* Nota de conservación documental — se muestra donde hay documentos o bajas.
+     Las dos normas conviven con plazos distintos; la política definitiva la
+     fijan Salud Ocupacional y Jurídico. */
+  function notaConservacion() {
+    const c = (global.ZX_DEMO && ZX_DEMO.CAT.conservacion) || {};
+    return '<div class="priv" style="align-items:flex-start">📚 <div>' +
+      '<b>Conservación del expediente — dos normas que conviven.</b><br>' +
+      '<b>1) Expediente clínico:</b> ' + esc(c.clinico || '') + '<br>' +
+      '<b>2) Documentación laboral:</b> ' + esc(c.laboral || '') + '<br>' +
+      esc(c.nota || '') + '</div></div>';
+  }
+
+  /* ---------------- Utilidades ---------------- */
+  function esc(v) {
+    if (v === null || v === undefined) return '';
+    return String(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+  const $ = (sel, ctx) => (ctx || document).querySelector(sel);
+  const $$ = (sel, ctx) => Array.prototype.slice.call((ctx || document).querySelectorAll(sel));
+
+  const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  const DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+
+  const hoyISO = () => new Date().toISOString().slice(0, 10);
+  function parse(iso) { return iso ? new Date(iso + 'T12:00:00') : null; }
+  function fmt(iso) {
+    const d = parse(iso); if (!d || isNaN(d)) return '—';
+    return d.getDate() + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + d.getFullYear();
+  }
+  function fmtLargo(iso) {
+    const d = parse(iso); if (!d || isNaN(d)) return '—';
+    return DIAS[d.getDay()] + ' ' + d.getDate() + ' de ' + MESES[d.getMonth()] + ' ' + d.getFullYear();
+  }
+  function iso(d) {
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  function sumaDias(isoStr, n) { const d = parse(isoStr); d.setDate(d.getDate() + n); return iso(d); }
+  function diffDias(a, b) { return Math.round((parse(b) - parse(a)) / 86400000) + 1; }
+  function antiguedad(ingreso) {
+    const d = parse(ingreso); if (!d) return 0;
+    const h = new Date();
+    let a = h.getFullYear() - d.getFullYear();
+    if (h.getMonth() < d.getMonth() || (h.getMonth() === d.getMonth() && h.getDate() < d.getDate())) a--;
+    return Math.max(0, a);
+  }
+  function edad(nac) { return antiguedad(nac); }
+  function iniciales(nombre) {
+    return String(nombre || '').replace(/^Dr\.?\s*/i, '').split(/\s+/).slice(0, 2).map(p => p[0] || '').join('').toUpperCase();
+  }
+  function imc(pesoKg, estaturaCm) {
+    if (!pesoKg || !estaturaCm) return null;
+    return +(pesoKg / Math.pow(estaturaCm / 100, 2)).toFixed(1);
+  }
+
+  /* ---------------- Tema ---------------- */
+  function temaInicial() {
+    let t = null;
+    try { t = localStorage.getItem('zx_tema'); } catch (e) {}
+    if (!t) t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', t);
+  }
+  function alternarTema() {
+    const t = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', t);
+    try { localStorage.setItem('zx_tema', t); } catch (e) {}
+  }
+  temaInicial();
+
+  /* ---------------- Toasts ---------------- */
+  function toast(msg, tipo) {
+    let cont = $('.toasts');
+    if (!cont) { cont = document.createElement('div'); cont.className = 'toasts'; document.body.appendChild(cont); }
+    const t = document.createElement('div');
+    t.className = 'toast ' + (tipo || '');
+    t.setAttribute('role', 'status');
+    t.textContent = msg;
+    cont.appendChild(t);
+    setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 250); }, 3600);
+  }
+
+  /* ---------------- Modal ---------------- */
+  let modalAbierto = null;
+  function modal(opts) {
+    cerrarModal();
+    const ovl = document.createElement('div');
+    ovl.className = 'ovl';
+    ovl.innerHTML =
+      '<div class="modal ' + (opts.ancho === 'lg' ? 'lg' : '') + '" role="dialog" aria-modal="true">' +
+        '<div class="mo-head"><b>' + esc(opts.titulo) + '</b><button class="mo-x" aria-label="Cerrar">✕</button></div>' +
+        '<div class="mo-body"></div>' +
+        '<div class="mo-foot"></div>' +
+      '</div>';
+    const body = $('.mo-body', ovl);
+    if (typeof opts.cuerpo === 'string') body.innerHTML = opts.cuerpo;
+    else if (opts.cuerpo) body.appendChild(opts.cuerpo);
+
+    const foot = $('.mo-foot', ovl);
+    (opts.botones || [{ txt: 'Cerrar', clase: 'gh' }]).forEach(b => {
+      const btn = document.createElement('button');
+      btn.className = 'btn ' + (b.clase || '');
+      btn.textContent = b.txt;
+      btn.addEventListener('click', () => {
+        if (!b.accion) return cerrarModal();
+        const r = b.accion(body, btn);
+        if (r && typeof r.then === 'function') { btn.disabled = true; r.finally(() => { btn.disabled = false; }); }
+      });
+      foot.appendChild(btn);
+    });
+
+    $('.mo-x', ovl).addEventListener('click', cerrarModal);
+    ovl.addEventListener('mousedown', e => { if (e.target === ovl) cerrarModal(); });
+    document.body.appendChild(ovl);
+    modalAbierto = ovl;
+    const primero = body.querySelector('input,select,textarea,button');
+    if (primero) primero.focus();
+    return body;
+  }
+  function cerrarModal() { if (modalAbierto) { modalAbierto.remove(); modalAbierto = null; } }
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') cerrarModal(); });
+
+  function confirmar(titulo, texto, onOk) {
+    modal({
+      titulo,
+      cuerpo: '<p style="font-size:13.5px;color:var(--tx2)">' + esc(texto) + '</p>',
+      botones: [
+        { txt: 'Cancelar', clase: 'gh' },
+        { txt: 'Confirmar', clase: '', accion: () => { cerrarModal(); onOk(); } }
+      ]
+    });
+  }
+
+  /* ---------------- Widget de calendario ---------------- */
+  /* opciones: { valor, min, max, rango:bool, deshabilitado:fn(iso), onPick(iso|{inicio,fin}) } */
+  function calendario(cont, opts) {
+    const o = Object.assign({ rango: false }, opts || {});
+    let ver = parse(o.valor || hoyISO()) || new Date();
+    let ini = o.rango ? (o.inicio || null) : (o.valor || null);
+    let fin = o.rango ? (o.fin || null) : null;
+
+    function render() {
+      const y = ver.getFullYear(), m = ver.getMonth();
+      const primero = new Date(y, m, 1);
+      const desplaz = primero.getDay();
+      const totalDias = new Date(y, m + 1, 0).getDate();
+      let html = '<div class="cal"><div class="cal-h">' +
+        '<button type="button" class="cal-nav" data-nav="-1" aria-label="Mes anterior">‹</button>' +
+        '<b>' + esc(MESES[m] + ' ' + y) + '</b>' +
+        '<button type="button" class="cal-nav" data-nav="1" aria-label="Mes siguiente">›</button>' +
+        '</div><div class="cal-g">';
+      ['D', 'L', 'M', 'M', 'J', 'V', 'S'].forEach(x => { html += '<div class="cal-dow">' + x + '</div>'; });
+      for (let i = 0; i < desplaz; i++) html += '<div class="cal-d out"></div>';
+      for (let dia = 1; dia <= totalDias; dia++) {
+        const f = iso(new Date(y, m, dia));
+        const clases = ['cal-d'];
+        if (f === hoyISO()) clases.push('hoy');
+        if (f === ini || f === fin) clases.push('sel');
+        else if (ini && fin && f > ini && f < fin) clases.push('rng');
+        const off = (o.min && f < o.min) || (o.max && f > o.max) || (o.deshabilitado && o.deshabilitado(f));
+        if (off) clases.push('off');
+        html += '<button type="button" class="' + clases.join(' ') + '"' + (off ? ' disabled' : '') +
+                ' data-f="' + esc(f) + '">' + dia + '</button>';
+      }
+      html += '</div></div>';
+      cont.innerHTML = html;
+
+      $$('.cal-nav', cont).forEach(b => b.addEventListener('click', () => {
+        ver = new Date(ver.getFullYear(), ver.getMonth() + (+b.dataset.nav), 1);
+        render();
+      }));
+      $$('.cal-d[data-f]', cont).forEach(b => b.addEventListener('click', () => {
+        const f = b.dataset.f;
+        if (!o.rango) { ini = f; render(); o.onPick && o.onPick(f); return; }
+        if (!ini || (ini && fin) || f < ini) { ini = f; fin = null; }
+        else { fin = f; }
+        render();
+        o.onPick && o.onPick({ inicio: ini, fin: fin });
+      }));
+    }
+    render();
+    return { get: () => (o.rango ? { inicio: ini, fin: fin } : ini) };
+  }
+
+  /* ---------------- Shell (topbar + sidebar) ---------------- */
+  function chip(estado) {
+    const map = {
+      pendiente: ['wa', 'Pendiente'], aprobada: ['ok', 'Aprobada'], rechazada: ['no', 'Rechazada'],
+      confirmada: ['in', 'Confirmada'], cancelada: ['no', 'Cancelada'], atendida: ['ok', 'Atendida'],
+      borrador: ['nt', 'Borrador'], en_firma: ['wa', 'En firma'], completado: ['ok', 'Completado'],
+      rechazado: ['no', 'Rechazado'], firmado: ['ok', 'Firmado']
+    };
+    const v = map[estado] || ['nt', estado];
+    return '<span class="chip ' + v[0] + '">' + esc(v[1]) + '</span>';
+  }
+
+  function requiereSesion(moduloId) {
+    const s = API.sesionActual();
+    if (!s) { location.replace('index.html'); return null; }
+    if (moduloId && !puede(s, moduloId)) {
+      const mod = MODULOS.find(m => m.id === moduloId) || {};
+      const desactivado = mod.id && !moduloActivo(mod);
+      document.body.innerHTML =
+        '<div style="max-width:480px;margin:14vh auto;text-align:center;font-family:Poppins,Segoe UI,sans-serif">' +
+        '<div style="font-size:40px">' + (desactivado ? '🚧' : '🔒') + '</div>' +
+        '<h1 style="font-size:20px;margin:10px 0">' +
+          (desactivado ? 'Módulo no habilitado' : 'Sin acceso a esta sección') + '</h1>' +
+        '<p style="font-size:13.5px;color:#516079">' +
+          (desactivado
+            ? 'El módulo <b>' + esc(mod.nombre || moduloId) + '</b> está desactivado en esta versión del portal.'
+            : 'Tu acceso (' + esc(ACCESO_TEXTO(s)) + ') no tiene permiso para <b>' + esc(mod.nombre || moduloId) + '</b>.') +
+        '</p><p style="margin-top:18px"><a href="index.html">Volver al inicio</a></p></div>';
+      return null;
+    }
+    return s;
+  }
+
+  function montarShell(activo, subtitulo, navItems) {
+    const s = API.sesionActual();
+    if (!s) return null;
+    const app = document.createElement('div');
+    app.className = 'app';
+
+    let nav = '';
+    modulosVisibles().filter(m => puede(s, m.id)).forEach(m => {
+      const on = m.id === activo ? ' on' : '';
+      nav += '<a class="sb-item' + on + '" href="' + esc(m.url) + '"><span class="sb-ico">' + m.ico + '</span><span>' + esc(m.nombre) + '</span></a>';
+    });
+
+    let sub = '';
+    if (navItems && navItems.length) {
+      sub = '<div class="sb-sec">En esta sección</div>';
+      navItems.forEach((n, i) => {
+        sub += '<button class="sb-item' + (i === 0 ? ' on' : '') + '" data-vista="' + esc(n.id) + '">' +
+               '<span class="sb-ico">' + n.ico + '</span><span>' + esc(n.nombre) + '</span></button>';
+      });
+    }
+
+    app.innerHTML =
+      '<header class="topbar">' +
+        '<div class="zx-logo"><span class="zx-mark">ZX</span><span>Portal Zubex' +
+          (subtitulo ? '<span class="tb-title" style="display:block">' + esc(subtitulo) + '</span>' : '') +
+        '</span></div>' +
+        '<div class="tb-right">' +
+          '<button class="theme-btn" id="zx-tema" aria-label="Cambiar tema"></button>' +
+          '<div class="tb-user"><b>' + esc(s.nombre) + '</b><span>' + esc(ACCESO_TEXTO(s)) + ' · ' + esc(s.depto) + '</span></div>' +
+          '<div class="tb-avatar">' + esc(iniciales(s.nombre)) + '</div>' +
+          '<button class="btn-logout" id="zx-salir">Salir</button>' +
+        '</div>' +
+      '</header>' +
+      '<div class="layout">' +
+        '<aside class="sidebar" id="zx-sb">' +
+          '<div class="sb-top"><button class="sb-toggle" id="zx-tg" aria-label="Colapsar menú">☰</button></div>' +
+          '<nav class="sb-nav"><div class="sb-sec">Portal</div>' + nav + sub + '</nav>' +
+          '<div class="sb-foot">Zubex Industrial · v' + VERSION + '</div>' +
+        '</aside>' +
+        '<main class="main" id="zx-main"></main>' +
+      '</div>';
+
+    document.body.innerHTML = '';
+    document.body.appendChild(app);
+    $('#zx-tema').addEventListener('click', alternarTema);
+    $('#zx-salir').addEventListener('click', () => { API.cerrarSesion(); location.replace('index.html'); });
+    $('#zx-tg').addEventListener('click', () => $('#zx-sb').classList.toggle('col'));
+    return { main: $('#zx-main'), sesion: s };
+  }
+
+  function bindVistas(onCambio) {
+    $$('.sb-item[data-vista]').forEach(b => b.addEventListener('click', () => {
+      $$('.sb-item[data-vista]').forEach(x => x.classList.remove('on'));
+      b.classList.add('on');
+      /* Si una vista falla, se muestra el error en lugar de dejar la
+         pantalla en blanco o en "Cargando…" indefinidamente. */
+      try {
+        const r = onCambio(b.dataset.vista);
+        if (r && typeof r.catch === 'function') r.catch(e => { console.error('[Portal Zubex]', e); fallo(e); });
+      } catch (e) { console.error('[Portal Zubex]', e); fallo(e); }
+    }));
+  }
+
+  function pie(main, nota) {
+    const div = document.createElement('div');
+    let html = '';
+    if (nota) html += '<div class="nota"><b>Nota metodológica.</b> ' + esc(nota) + '</div>';
+    html += '<div class="pie">Portal Zubex · Zubex Industrial S.A. de C.V. · Generado: ' + esc(fmtLargo(hoyISO())) + '</div>';
+    div.innerHTML = html;
+    main.appendChild(div);
+  }
+
+  function cargando(main) {
+    main.innerHTML = '<div class="empty">Cargando…</div>';
+  }
+
+  /* Ninguna pantalla debe quedarse en "Cargando…" para siempre: si la carga
+     falla, se muestra el error y cómo recuperarse. */
+  function fallo(err) {
+    const main = $('#zx-main') || document.body;
+    main.innerHTML =
+      '<div class="card" style="max-width:620px;margin:8vh auto;text-align:center">' +
+        '<div style="font-size:34px;margin-bottom:8px">⚠️</div>' +
+        '<h1 class="page-t" style="margin-bottom:6px">No se pudo cargar esta sección</h1>' +
+        '<p class="page-sub" style="margin-bottom:14px">' + esc((err && err.message) || String(err || 'Error desconocido')) + '</p>' +
+        '<p style="font-size:12.5px;color:var(--tx2);margin-bottom:16px">Si el portal se actualizó recientemente, es probable que ' +
+          'tu navegador conserve datos de demostración de una versión anterior. Restablecerlos suele resolverlo.</p>' +
+        '<div class="btn-row" style="justify-content:center">' +
+          '<button class="btn" id="zx-reset">↺ Restablecer datos de demostración</button>' +
+          '<button class="btn gh" id="zx-recargar">Recargar página</button>' +
+        '</div></div>';
+    const r = $('#zx-reset'), rc = $('#zx-recargar');
+    if (r) r.addEventListener('click', () => { global.ZX_API.reiniciar(); location.reload(); });
+    if (rc) rc.addEventListener('click', () => location.reload());
+  }
+
+  /* Envuelve el arranque de cada página.
+     Además del try/catch, impone un tiempo límite: ninguna pantalla debe
+     quedarse en "Cargando…" indefinidamente, ni siquiera si una promesa
+     nunca se resuelve. */
+  function arranque(fn, ms) {
+    let listo = false;
+    const limite = setTimeout(() => {
+      if (listo) return;
+      const main = $('#zx-main');
+      if (main && main.textContent.indexOf('Cargando') >= 0) {
+        fallo(new Error('La carga tardó más de ' + Math.round((ms || 12000) / 1000) +
+          ' segundos y se interrumpió. Puede ser un bloqueo de red o datos de demostración inconsistentes.'));
+      }
+    }, ms || 12000);
+    Promise.resolve().then(fn)
+      .then(() => { listo = true; clearTimeout(limite); })
+      .catch(e => { listo = true; clearTimeout(limite); console.error('[Portal Zubex]', e); fallo(e); });
+  }
+  global.addEventListener('unhandledrejection', ev => {
+    console.error('[Portal Zubex]', ev.reason);
+    const main = $('#zx-main');
+    if (main && main.textContent.indexOf('Cargando') >= 0) fallo(ev.reason);
+  });
+
+  function tabla(cols, filas, opts) {
+    const o = opts || {};
+    if (!filas.length) return '<div class="tbl-wrap"><div class="empty">' + esc(o.vacio || 'Sin registros.') + '</div></div>';
+    let h = '<div class="tbl-wrap"><table><thead><tr>';
+    cols.forEach(c => { h += '<th>' + esc(c.t) + '</th>'; });
+    h += '</tr></thead><tbody>';
+    filas.forEach((f, i) => {
+      h += '<tr' + (o.filaAttr ? ' ' + o.filaAttr(f, i) : '') + '>';
+      cols.forEach(c => { h += '<td>' + (c.html ? c.html(f, i) : esc(c.v ? c.v(f) : f[c.k])) + '</td>'; });
+      h += '</tr>';
+    });
+    return h + '</tbody></table></div>';
+  }
+
+  function descargarCSV(nombre, cols, filas) {
+    const esc2 = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+    const lineas = [cols.map(c => esc2(c.t)).join(',')];
+    filas.forEach(f => lineas.push(cols.map(c => esc2(c.v ? c.v(f) : f[c.k])).join(',')));
+    const blob = new Blob(['﻿' + lineas.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = nombre;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1500);
+  }
+
+  /* Lector de CSV genérico (RFC4180: comillas, comas y saltos de línea
+     dentro de campos entrecomillados). Devuelve { headers, filas } donde
+     cada fila es un objeto con las columnas originales (sin normalizar) —
+     quien llame decide cómo mapear encabezados a campos, porque cada
+     fuente (IBIX, un Excel a mano) nombra sus columnas distinto. */
+  function leerCSV(texto) {
+    const s = String(texto || '').replace(/^\ufeff/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const filas = [];
+    let fila = [], campo = '', enComillas = false, i = 0;
+    while (i < s.length) {
+      const c = s[i];
+      if (enComillas) {
+        if (c === '"') {
+          if (s[i + 1] === '"') { campo += '"'; i += 2; continue; }
+          enComillas = false; i++; continue;
+        }
+        campo += c; i++; continue;
+      }
+      if (c === '"') { enComillas = true; i++; continue; }
+      if (c === ',') { fila.push(campo); campo = ''; i++; continue; }
+      if (c === '\n') { fila.push(campo); filas.push(fila); fila = []; campo = ''; i++; continue; }
+      campo += c; i++;
+    }
+    if (campo !== '' || fila.length) { fila.push(campo); filas.push(fila); }
+    const limpio = filas.filter(f => f.some(v => String(v).trim() !== ''));
+    if (!limpio.length) return { headers: [], filas: [] };
+    const headers = limpio[0].map(h => h.trim());
+    const objetos = limpio.slice(1).map(f => {
+      const o = {};
+      headers.forEach((h, idx) => { o[h] = (f[idx] || '').trim(); });
+      return o;
+    });
+    return { headers, filas: objetos };
+  }
+
+  global.ZX = {
+    VERSION, MODULOS, modulosVisibles, puede, NIVEL_NOMBRE, PERFIL_NOMBRE, ACCESO_TEXTO,
+    esAprobador, esClinico, esRRHH, esVigilancia, esAdmin, notaConservacion,
+    esc, $, $$, MESES, DIAS,
+    hoyISO, parse, fmt, fmtLargo, iso, sumaDias, diffDias, antiguedad, edad, iniciales, imc,
+    alternarTema, toast, modal, cerrarModal, confirmar, calendario,
+    chip, requiereSesion, montarShell, bindVistas, pie, cargando, fallo, arranque, tabla, descargarCSV, leerCSV
+  };
+})(window);
