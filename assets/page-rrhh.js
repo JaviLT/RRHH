@@ -7,7 +7,7 @@
   'use strict';
   const { esc, $, $$, toast, chip, fmt, fmtLargo, hoyISO, tabla, modal, cerrarModal, confirmar, descargarCSV } = window.ZX;
   const API = window.ZX_API;
-  const CAT = window.ZX_DEMO.CAT;
+  const CAT = window.ZX_CAT;
 
   const sesion = ZX.requiereSesion('rrhh');
   if (!sesion) return;
@@ -22,13 +22,13 @@
   const shell = ZX.montarShell('rrhh', 'Recursos Humanos · Gestión documental', vistas);
   const main = shell.main;
 
-  let D = { emps: [], movs: [] };
+  let D = { emps: [], movs: [], cats: { departamentos: [], areas: [], turnos: [] } };
   const empDe = id => D.emps.find(e => e.id === id) || {};
   const nombreDe = id => empDe(id).nombre || id || '—';
 
   async function recargar() {
-    const [emps, movs] = await Promise.all([API.empleados.lista(), API.rrhh.movimientos()]);
-    D = { emps, movs };
+    const [emps, movs, cats] = await Promise.all([API.empleados.lista(), API.rrhh.movimientos(), API.empleados.catalogos()]);
+    D = { emps, movs, cats };
   }
 
   let vista = 'tablero';
@@ -43,7 +43,7 @@
      desde IBIX y esta pantalla quedará sólo de consulta. */
   let qm = '', fArea = '', fTurno = '';
   function maestro() {
-    const D2 = window.ZX_DEMO;
+    const D2 = { AREAS: D.cats.areas, TURNOS: D.cats.turnos, DEPARTAMENTOS: D.cats.departamentos };
     const lista = D.emps.filter(e =>
       (!fArea || e.area === fArea) && (!fTurno || e.turno === fTurno) &&
       (!qm || (e.nombre + ' ' + e.id + ' ' + e.depto + ' ' + (e.puesto || '')).toLowerCase().indexOf(qm.toLowerCase()) >= 0));
@@ -229,7 +229,7 @@
   }
 
   function popupMaestro(id) {
-    const D2 = window.ZX_DEMO;
+    const D2 = { AREAS: D.cats.areas, TURNOS: D.cats.turnos, DEPARTAMENTOS: D.cats.departamentos };
     const e = empDe(id);
     modal({
       titulo: 'Datos laborales · ' + e.nombre,
@@ -444,8 +444,8 @@
     modal({
       titulo: 'Registrar documento',
       cuerpo:
-        '<div class="priv">📎 <div>En este entorno de demostración sólo se registra el <b>metadato</b> del documento (nombre y tipo). ' +
-        'La subida real del archivo debe hacerse contra el almacenamiento del servidor, con antivirus, validación de tipo MIME y control de acceso.</div></div>' +
+        '<div class="priv">📎 <div>Por ahora sólo se registra el <b>metadato</b> del documento (nombre y tipo). ' +
+        'La carga del archivo (con antivirus, validación de tipo y control de acceso) aún no está conectada.</div></div>' +
         '<div class="field"><label for="tipo">Tipo de documento</label><select id="tipo">' +
           CAT.tiposDoc.map(t => '<option>' + esc(t) + '</option>').join('') + '</select></div>' +
         '<div class="field"><label for="nom">Nombre del archivo</label><input id="nom" maxlength="80" placeholder="movimiento_firmado.pdf"></div>',
@@ -521,7 +521,7 @@
     if (t === 'C') return '<div class="frow">' +
       fld('puestoActual', 'Puesto actual') + fld('deptoActual', 'Departamento actual') +
       fld('puestoNuevo', 'Puesto nuevo') + fld('deptoNuevo', 'Departamento nuevo') + '</div>';
-    if (t === 'D') return '<div class="priv">💼 <div>El detalle de sueldos es información confidencial. En este entorno sólo se captura el <b>motivo</b>; los importes deben vivir en el sistema de nómina, no en el portal.</div></div>' +
+    if (t === 'D') return '<div class="priv">💼 <div>El detalle de sueldos es información confidencial. El portal sólo captura el <b>motivo</b>; los importes deben vivir en el sistema de nómina, no en el portal.</div></div>' +
       '<div class="frow">' + selc('motivoSueldo', 'Motivo', ['Promoción', 'Méritos', 'Ajuste']) +
       fld('efectivo', 'Fecha efectiva', 'date') + '</div>';
     return '<div class="frow">' +
@@ -617,7 +617,7 @@
     modal({
       titulo: 'Registrar documento en el expediente',
       cuerpo:
-        '<div class="priv">📎 <div>Sólo se registra el metadato del documento en este entorno. La carga real de archivos requiere el backend con control de acceso y bitácora.</div></div>' +
+        '<div class="priv">📎 <div>Por ahora sólo se registra el metadato del documento. La carga del archivo aún no está conectada.</div></div>' +
         '<div class="frow">' +
           '<div class="field"><label for="tipo">Tipo</label><select id="tipo">' + CAT.tiposDoc.map(t => '<option>' + esc(t) + '</option>').join('') + '</select></div>' +
           '<div class="field"><label for="nom">Nombre del archivo</label><input id="nom" maxlength="80"></div>' +

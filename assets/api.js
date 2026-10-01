@@ -1,890 +1,606 @@
 /* ============================================================
    Portal Zubex — Capa de acceso a datos (API)
    ------------------------------------------------------------
-   Único punto del frontend que sabe de dónde vienen los datos.
-   Hoy funciona en MODO DEMO (datos ficticios en memoria +
-   localStorage). Para conectar el backend real:
+   Único punto del frontend que habla con los datos: Supabase
+   (RLS + funciones SECURITY DEFINER + triggers hacen cumplir en el
+   servidor la matriz nivel/perfil, el consentimiento, la apertura
+   de casos y la bitácora). Aquí sólo se valida lo necesario para dar
+   una respuesta rápida y clara antes de que la base tenga que
+   rechazar algo.
 
-     1. Cambiar ZX_API.config.modo = 'rest'
-     2. Definir ZX_API.config.base = 'https://.../api'
-     3. Borrar data.demo.js del HTML
-
-   Todas las funciones son async y devuelven Promesas, por lo que
-   la interfaz no cambia al migrar a servidor.
-
-   ⚠ SEGURIDAD: las validaciones de permiso de este archivo son
-   de UX. La autorización REAL debe hacerla el servidor en cada
-   endpoint. Nunca confiar en el cliente.
+   Todas las funciones son async. Ninguna pantalla (page-*.js) sabe
+   de tablas ni de SQL: sólo llama a ZX_API.
    ============================================================ */
 (function (global) {
   'use strict';
 
+  /* Lo único que este portal guarda en el navegador:
+       sessionStorage (se borra al cerrar el navegador):
+         · la sesión actual (quién eres, tu nivel y tu perfil)
+         · copia de los perfiles y del aviso de privacidad, que los menús
+           necesitan leer al instante para decidir qué mostrar
+       localStorage:
+         · sólo la preferencia de tema claro/oscuro (zx_tema, en app.js) */
   const config = {
-    modo: 'demo',              // 'demo' | 'rest'
-    base: '/api',
-    /* La versión del almacén cambia cuando cambia la forma de los datos.
-       Al subirla, los navegadores que tengan datos de una versión anterior
-       arrancan con la semilla nueva en lugar de quedarse con un almacén
-       incompleto (usuarios o colecciones que aún no existían). */
-    storageKey: 'zx_portal_demo_v4',
-    sesionKey: 'zx_portal_sesion'
+    sesionKey: 'zx_portal_sesion',
+    perfilesCacheKey: 'zx_portal_perfiles_cache',
+    avisoCacheKey: 'zx_portal_aviso_cache'
   };
 
-  /* ---------------- Almacén demo ---------------- */
-  let store = null;
+  /* Borra los datos ficticios que versiones anteriores (modo demo) dejaron
+     guardados en este navegador, para que no quede ninguna copia local. */
+  try { localStorage.removeItem('zx_portal_demo_v4'); } catch (e) {}
 
-  function semilla() {
-    const D = global.ZX_DEMO;
-    return {
-      empleados: clonar(D.EMPLEADOS),
-      credenciales: clonar(D.CREDENCIALES),
-      solicitudes: clonar(D.SOLICITUDES),
-      banco: clonar(D.BANCO_HORAS),
-      cuestionarios: clonar(D.CUESTIONARIOS),
-      consultas: clonar(D.CONSULTAS),
-      agenda: clonar(D.AGENDA_MEDICO),
-      citas: clonar(D.CITAS),
-      movimientos: clonar(D.MOVIMIENTOS),
-      expedientes: clonar(D.EXPEDIENTES),
-      evaluaciones: clonar(D.EVALUACIONES),
-      riesgos: clonar(D.RIESGOS),
-      incapacidades: clonar(D.INCAPACIDADES),
-      docsMedicos: clonar(D.DOCS_MEDICOS),
-      vigilancia: clonar(D.VIGILANCIA),
-      expedientesMed: clonar(D.EXPEDIENTES_MED),
-      programaEval: clonar(D.PROGRAMA_EVAL),
-      vacunas: clonar(D.VACUNAS),
-      campanas: clonar(D.CAMPANAS),
-      bitacora: clonar(D.BITACORA),
-      programacionAnalisis: clonar(D.PROGRAMACION_ANALISIS),
-      resultados: clonar(D.RESULTADOS_ANALISIS),
-      casos: clonar(D.CASOS_ANALISIS),
-      consentimientos: clonar(D.CONSENTIMIENTOS),
-      solicitudesArco: clonar(D.SOLICITUDES_ARCO),
-      perfiles: clonar(D.PERFILES)
-    };
-  }
-
-  const clonar = (o) => JSON.parse(JSON.stringify(o));
-
-  function cargar() {
-    if (store) return store;
-    try {
-      const raw = localStorage.getItem(config.storageKey);
-      store = raw ? JSON.parse(raw) : semilla();
-    } catch (e) { store = semilla(); }
-
-    /* Autorreparación: si el almacén guardado no trae alguna colección
-       (porque se guardó con una versión anterior del portal), se rellena
-       con la semilla en vez de dejar que la app falle al leerla.
-       Limpiar los datos del navegador nunca debería ser un requisito. */
-    const base = semilla();
-    let reparado = false;
-    Object.keys(base).forEach(k => {
-      const v = store[k];
-      const faltante = v === undefined || v === null ||
-        (Array.isArray(base[k]) && (!Array.isArray(v) || v.length === 0));
-      if (faltante) { store[k] = base[k]; reparado = true; }
-    });
-    /* Usuarios nuevos de la semilla que no existan en el almacén guardado */
-    if (Array.isArray(store.empleados)) {
-      base.empleados.forEach(e => {
-        if (!store.empleados.some(x => x.id === e.id)) { store.empleados.push(e); reparado = true; }
-      });
-    }
-    if (reparado) guardar();
-    return store;
-  }
-
-  function guardar() {
-    try { localStorage.setItem(config.storageKey, JSON.stringify(store)); }
-    catch (e) { /* modo privado: los cambios sólo viven en memoria */ }
-  }
-
-  function reiniciar() {
-    store = semilla();
-    guardar();
-  }
-
-  /* Simula latencia de red para que la UI se pruebe con estados de carga */
-  const espera = (ms) => new Promise(r => setTimeout(r, ms));
-  async function demo(fn, ms) {
-    await espera(ms == null ? 90 : ms);
-    const r = fn(cargar());
-    guardar();
-    return clonar(r === undefined ? null : r);
-  }
-
-  async function rest(ruta, opts) {
-    const res = await fetch(config.base + ruta, Object.assign({
-      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-      credentials: 'same-origin'
-    }, opts || {}));
-    if (!res.ok) throw new Error('Error ' + res.status + ' en ' + ruta);
-    return res.status === 204 ? null : res.json();
-  }
-
-  const esDemo = () => config.modo === 'demo';
   const nuevoId = (pre) => pre + '-' + Math.random().toString(36).slice(2, 7).toUpperCase();
+  const hoy = () => new Date().toISOString().slice(0, 10);
 
-  /* ---------------- Bitácora de auditoría ----------------
-     ⚠ En producción la bitácora la escribe el SERVIDOR dentro de la misma
-     transacción de cada operación. Un registro escrito por el cliente no
-     tiene valor probatorio: puede omitirse o falsificarse desde el navegador.
-     Esta implementación existe sólo para que la pantalla de auditoría
-     muestre movimientos reales durante la demostración. */
-  function bitacora(accion, entidad, afectado, detalle) {
-    if (!esDemo()) return;
-    const s = cargar();
-    const u = sesionActual();
-    const ahora = new Date();
-    s.bitacora.push({
-      id: nuevoId('LG'),
-      fecha: ahora.toISOString().slice(0, 10) + ' ' + ahora.toTimeString().slice(0, 5),
-      usuario: u ? u.id : 'anónimo',
-      accion: accion, entidad: entidad || '', afectado: afectado || '', detalle: detalle || ''
+  /* ============================================================
+     Conversión genérica camelCase (JS) ↔ snake_case (columnas).
+     Los nombres de columna se diseñaron para ser la transformación
+     mecánica del nombre de campo JS, así que un solo conversor sirve
+     para las 30 tablas — salvo un puñado de siglas (IMSS) que se
+     listan como excepción explícita.
+     ============================================================ */
+  const EXC_A_SNAKE = { reportadoIMSS: 'reportado_imss' };
+  const EXC_A_CAMEL = { reportado_imss: 'reportadoIMSS' };
+  const aSnake = (k) => EXC_A_SNAKE[k] || k.replace(/([A-Z])/g, (m) => '_' + m.toLowerCase());
+  const aCamel = (k) => EXC_A_CAMEL[k] || k.replace(/_([a-z0-9])/g, (_, c) => c.toUpperCase());
+
+  function haciaDB(obj) {
+    const o = {};
+    Object.keys(obj || {}).forEach(k => { if (obj[k] !== undefined) o[aSnake(k)] = obj[k]; });
+    return o;
+  }
+  function desdeDB(fila) {
+    if (!fila) return fila;
+    const o = {};
+    Object.keys(fila).forEach(k => { o[aCamel(k)] = fila[k]; });
+    return o;
+  }
+  const listaDesdeDB = (filas) => (filas || []).map(desdeDB);
+
+  /* Cliente de supabase-js, cargado desde assets/supabase.min.js (local,
+     NUNCA desde un CDN — la red de planta ya bloqueó cdn.jsdelivr.net una
+     vez con Medico ZX; no repetir el incidente).
+     Sesión guardada en sessionStorage (no localStorage): muere al cerrar
+     el navegador, la misma decisión de seguridad que ya tenía el portal. */
+  let supaClient = null;
+  function cliente() {
+    if (supaClient) return supaClient;
+    if (!global.supabase || !global.ZX_CONFIG) {
+      throw new Error('Supabase no está disponible: revisa que supabase.min.js y config.js estén cargados antes de api.js.');
+    }
+    supaClient = global.supabase.createClient(global.ZX_CONFIG.supabaseUrl, global.ZX_CONFIG.supabaseKey, {
+      auth: { storage: window.sessionStorage, persistSession: true, autoRefreshToken: true }
     });
-    if (s.bitacora.length > 500) s.bitacora = s.bitacora.slice(-500);
-    guardar();
+    return supaClient;
+  }
+
+  /* Desenvuelve { data, error } de supabase-js y lo vuelve una Promesa
+     que resuelve con `data` o rechaza con un Error legible — el mismo
+     contrato que usan todas las funciones de este archivo. */
+  async function sb(promesa) {
+    const { data, error } = await promesa;
+    if (error) throw new Error(error.message);
+    return data;
+  }
+
+  function conFiltro(query, filtro) {
+    if (!filtro) return query;
+    Object.keys(filtro).forEach(k => {
+      if (filtro[k] != null && filtro[k] !== '') query = query.eq(aSnake(k), filtro[k]);
+    });
+    return query;
+  }
+
+  /* Lee-modifica-escribe un arreglo JSONB (seguimiento, notas, casos,
+     docs...). No es atómico —dos escrituras a la vez podrían pisarse—,
+     suficiente para el volumen
+     de esta aplicación, documentado como mejora futura si hace falta. */
+  async function anexarJSON(tabla, idCol, idVal, campoJSON, item) {
+    const fila = await sb(cliente().from(tabla).select(campoJSON).eq(idCol, idVal).single());
+    const arr = fila[campoJSON] || [];
+    arr.push(item);
+    const act = {}; act[campoJSON] = arr;
+    const out = await sb(cliente().from(tabla).update(act).eq(idCol, idVal).select().single());
+    return desdeDB(out);
+  }
+
+  /* Caché en sessionStorage para lo que app.js necesita leer de forma
+     SÍNCRONA (puede()/requiereSesion() no pueden esperar una promesa).
+     Se llena al iniciar sesión y se refresca en segundo plano cada vez
+     que se pide la sesión actual — puede ir unos segundos desactualizada
+     si alguien más cambia un perfil mientras la pestaña está abierta. */
+  function guardarCache(key, valor) { try { sessionStorage.setItem(key, JSON.stringify(valor)); } catch (e) {} }
+  function leerCache(key) { try { const r = sessionStorage.getItem(key); return r ? JSON.parse(r) : null; } catch (e) { return null; } }
+
+  async function refrescarCaches() {
+    try {
+      const perfiles = await sb(cliente().from('perfiles').select('*'));
+      guardarCache(config.perfilesCacheKey, listaDesdeDB(perfiles));
+    } catch (e) { /* se reintenta la próxima vez */ }
+    try {
+      const aviso = await sb(cliente().from('aviso_privacidad').select('*').order('actualizado', { ascending: false }).limit(1));
+      if (aviso && aviso[0]) guardarCache(config.avisoCacheKey, desdeDB(aviso[0]));
+    } catch (e) {}
   }
 
   /* ---------------- Sesión ---------------- */
-  /* En producción esto lo sustituye un token httpOnly emitido por el
-     servidor (o SSO de Microsoft Entra ID, que ya usa Zubex con PowerApps). */
   function sesionActual() {
     try {
       const raw = sessionStorage.getItem(config.sesionKey);
-      return raw ? JSON.parse(raw) : null;
+      const s = raw ? JSON.parse(raw) : null;
+      if (s) refrescarCaches(); // en segundo plano, no bloquea
+      return s;
     } catch (e) { return null; }
   }
 
   function cerrarSesion() {
-    try { sessionStorage.removeItem(config.sesionKey); } catch (e) {}
+    try {
+      sessionStorage.removeItem(config.sesionKey);
+      sessionStorage.removeItem(config.perfilesCacheKey);
+      sessionStorage.removeItem(config.avisoCacheKey);
+    } catch (e) {}
+    /* Nota: cada "Salir" en la app real hace location.replace() justo
+       después de esto, lo que recarga la página y reinicia este módulo
+       por completo (supaClient vuelve a null). No hace falta esperar
+       aquí a que termine signOut() para ese flujo, pero se llama de
+       todas formas para invalidar la sesión del lado de Supabase cuanto
+       antes en vez de dejar que sólo expire sola. */
+    if (supaClient) supaClient.auth.signOut().catch(() => {});
   }
 
   async function login(usuario, password) {
-    if (!esDemo()) {
-      const r = await rest('/auth/login', { method: 'POST', body: JSON.stringify({ usuario, password }) });
-      sessionStorage.setItem(config.sesionKey, JSON.stringify(r.usuario));
-      return r.usuario;
+    /* Mismo patrón de correo sintético que Medico ZX: <nómina>@nomina.zubex.com.mx.
+       También se acepta un correo real si alguien lo escribe completo. */
+    const texto = String(usuario || '').trim().toLowerCase();
+    const correo = texto.indexOf('@') >= 0 ? texto : texto + '@nomina.zubex.com.mx';
+    const { data, error } = await cliente().auth.signInWithPassword({ email: correo, password });
+    if (error) throw new Error('Usuario o contraseña incorrectos.');
+
+    const fila = await sb(cliente().from('empleados').select('*').eq('auth_user_id', data.user.id).maybeSingle());
+    if (!fila) {
+      await cliente().auth.signOut();
+      throw new Error('Tu usuario no tiene un perfil de empleado ligado todavía. Contacta a Recursos Humanos.');
     }
-    await espera(280);
-    const u = String(usuario || '').trim().toUpperCase();
-    const emp = cargar().empleados.find(e => e.id.toUpperCase() === u || e.correo.toLowerCase() === String(usuario).trim().toLowerCase());
-    const cred = (cargar().credenciales || []).find(c => emp && c.id === emp.id);
-    if (!emp || !cred || cred.hash !== 'demo::' + String(password || '')) {
-      throw new Error('Usuario o contraseña incorrectos.');
-    }
-    if (emp.estatus === 'baja') {
+    if (fila.estatus === 'baja') {
+      await cliente().auth.signOut();
       throw new Error('Este acceso está suspendido. Contacta a Recursos Humanos si crees que es un error.');
     }
+    const emp = desdeDB(fila);
     const sesion = {
       id: emp.id, nombre: emp.nombre, correo: emp.correo, depto: emp.depto,
       puesto: emp.puesto, nivel: emp.nivel, perfil: emp.perfil, inicio: new Date().toISOString()
     };
     sessionStorage.setItem(config.sesionKey, JSON.stringify(sesion));
+    await refrescarCaches();
     return sesion;
   }
 
   /* ---------------- Empleados ---------------- */
   const empleados = {
-    lista: () => esDemo() ? demo(s => s.empleados) : rest('/empleados'),
-    uno: (id) => esDemo() ? demo(s => s.empleados.find(e => e.id === id) || null) : rest('/empleados/' + id),
-    equipo: (jefeId) => esDemo() ? demo(s => s.empleados.filter(e => e.jefe === jefeId)) : rest('/empleados?jefe=' + encodeURIComponent(jefeId)),
-    actualizar: (id, campos) => esDemo() ? demo(s => {
-      const e = s.empleados.find(x => x.id === id);
-      if (!e) throw new Error('Empleado no encontrado');
-      Object.assign(e, campos);
-      return e;
-    }) : rest('/empleados/' + id, { method: 'PATCH', body: JSON.stringify(campos) }),
+    lista: () => sb(cliente().from('empleados').select('*')).then(listaDesdeDB),
+    uno: (id) => sb(cliente().from('empleados').select('*').eq('id', id).maybeSingle()).then(desdeDB),
+    equipo: (jefeId) => sb(cliente().from('empleados').select('*').eq('jefe', jefeId)).then(listaDesdeDB),
+    actualizar: (id, campos) => sb(cliente().from('empleados').update(haciaDB(campos)).eq('id', id).select().single()).then(desdeDB),
 
-    /* Sincronización desde IBIX (o cualquier maestro externo). `filas` ya
-       viene mapeada a { id, nombre, correo, depto, area, turno, puesto,
-       jefe, ingreso, estatus } — el mapeo de encabezados del CSV real lo
-       hace la pantalla (page-rrhh.js), porque cada exportación nombra sus
-       columnas distinto. Esta función NUNCA toca nivel ni perfil: esos
-       campos no existen en IBIX y se asignan a mano en el portal. Un
-       empleado nuevo entra con nivel 'empleado' y perfil 'ninguno' — el
-       mínimo acceso posible — y con una contraseña temporal, igual que
-       hacía el cargador de Medico ZX. */
-    sincronizarIBIX: (filas, quien) => esDemo() ? demo(s => {
-      const resumen = { nuevos: [], actualizados: [], sinCambios: 0, suspendidos: [], errores: [], credenciales: [] };
-      const CAMPOS = ['nombre', 'correo', 'depto', 'area', 'turno', 'puesto', 'jefe', 'ingreso', 'estatus'];
+    /* Catálogos vivos de departamento, área y turno. No son una lista fija
+       en el código: la importación desde IBIX agrega los valores nuevos. */
+    catalogos: async () => {
+      const [d, a, t] = await Promise.all([
+        sb(cliente().from('departamentos').select('nombre').order('nombre')),
+        sb(cliente().from('areas').select('nombre').order('nombre')),
+        sb(cliente().from('turnos').select('nombre').order('nombre'))
+      ]);
+      return { departamentos: d.map(x => x.nombre), areas: a.map(x => x.nombre), turnos: t.map(x => x.nombre) };
+    },
 
-      /* Seguro contra archivos incompletos: si el CSV trae menos del 90% de
-         quienes hoy están activos, NO se toca nada. Sin esto, un archivo
-         roto o a medio exportar suspendería a casi toda la planta por
-         accidente — es el mismo tipo de candado que ya se documentó para
-         Medico ZX con fechas ambiguas: negarse en vez de adivinar. */
-      const activosAntes = s.empleados.filter(e => e.estatus !== 'baja');
-      const idsEnArchivo = new Set(filas.map(f => String(f.id || '').trim().toUpperCase()).filter(Boolean));
-      if (activosAntes.length > 0 && idsEnArchivo.size < activosAntes.length * 0.9) {
-        throw new Error('El archivo trae ' + idsEnArchivo.size + ' de ' + activosAntes.length +
-          ' personas activas (menos del 90%). No se aplicó ningún cambio — revisa el archivo antes de reintentar.');
-      }
-
-      filas.forEach((f, idx) => {
-        const id = String(f.id || '').trim().toUpperCase();
-        if (!id) { resumen.errores.push('Fila ' + (idx + 2) + ': sin número de nómina.'); return; }
-        if (!f.nombre) { resumen.errores.push('Fila ' + (idx + 2) + ' (' + id + '): sin nombre.'); return; }
-
-        const campos = {};
-        CAMPOS.forEach(c => { if (f[c] !== undefined && f[c] !== '') campos[c] = f[c]; });
-        if (campos.estatus) {
-          const v = String(campos.estatus).toLowerCase();
-          campos.estatus = (v.indexOf('baja') >= 0 || v.indexOf('inactiv') >= 0 || v === '0' || v === 'no') ? 'baja' : 'activo';
-        }
-
-        let e = s.empleados.find(x => x.id.toUpperCase() === id);
-        if (!e) {
-          e = Object.assign({
-            id, nivel: 'empleado', perfil: 'ninguno', correo: '', depto: '', area: '', turno: '',
-            puesto: '', jefe: null, ingreso: new Date().toISOString().slice(0, 10), estatus: 'activo', genero: '', nacimiento: '',
-            dias: 0, diasPend: 0, pendActivos: false, horas: 0, horasDeber: 0
-          }, campos);
-          s.empleados.push(e);
-          const temp = 'zx' + Math.random().toString(36).slice(2, 8);
-          s.credenciales = s.credenciales || [];
-          s.credenciales.push({ id, hash: 'demo::' + temp });
-          resumen.nuevos.push(e.nombre + ' (' + id + ')');
-          resumen.credenciales.push({ id, nombre: e.nombre, temporal: temp });
-          bitacora('ibix.alta', id, id, 'Alta automática desde IBIX — nivel y perfil por asignar en Administración');
-        } else {
-          const huboCambio = Object.keys(campos).some(k => String(e[k] || '') !== String(campos[k] || ''));
-          if (huboCambio) {
-            Object.assign(e, campos);
-            resumen.actualizados.push(e.nombre + ' (' + id + ')');
-            bitacora('ibix.actualizar', id, id, 'Sincronizado desde IBIX');
-          } else {
-            resumen.sinCambios++;
-          }
-        }
+    /* Sincronizar desde IBIX no puede hacerse con un
+       simple UPDATE del cliente: dar de alta a alguien nuevo requiere crear
+       su usuario real de Auth, y eso exige la llave de servicio — que
+       nunca debe llegar al navegador. Por eso se llama a la Edge Function
+       "sincronizar-ibix", que sí la tiene (ver supabase/functions/). */
+    sincronizarIBIX: (filas, quien) => (async () => {
+      const { data: { session } } = await cliente().auth.getSession();
+      if (!session) throw new Error('Sesión no válida.');
+      const resp = await fetch(global.ZX_CONFIG.supabaseUrl + '/functions/v1/sincronizar-ibix', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + session.access_token },
+        body: JSON.stringify({ filas })
       });
-
-      /* Suspensión automática: quien seguía activo aquí y ya no aparece en
-         el archivo (IBIX sólo entrega activos, según el script del usuario).
-         Nunca se elimina — se suspende, igual que el botón manual de
-         Administración: conserva expediente e historial, sólo cierra el
-         acceso (ver login(), que ya revisa estatus === 'baja'). */
-      s.empleados.forEach(e => {
-        if (e.estatus !== 'baja' && !idsEnArchivo.has(e.id.toUpperCase())) {
-          e.estatus = 'baja';
-          resumen.suspendidos.push(e.nombre + ' (' + e.id + ')');
-          bitacora('ibix.suspension_automatica', e.id, e.id, 'Ya no aparece en el archivo de IBIX — se suspendió el acceso, el expediente se conserva');
-        }
-      });
-
-      return resumen;
-    }) : rest('/empleados/sincronizar-ibix', { method: 'POST', body: JSON.stringify({ filas }) })
+      const cuerpo = await resp.json();
+      if (!resp.ok) throw new Error(cuerpo.error || 'No se pudo importar.');
+      return cuerpo;
+    })()
   };
 
   /* ---------------- Vacaciones y banco de horas ---------------- */
   const vacaciones = {
-    solicitudes: (filtro) => esDemo() ? demo(s => aplicaFiltro(s.solicitudes, filtro)) : rest('/vacaciones' + qs(filtro)),
-    banco: (filtro) => esDemo() ? demo(s => aplicaFiltro(s.banco, filtro)) : rest('/banco-horas' + qs(filtro)),
+    solicitudes: (filtro) => sb(conFiltro(cliente().from('solicitudes_vacaciones').select('*'), filtro)).then(listaDesdeDB),
+    banco: (filtro) => sb(conFiltro(cliente().from('solicitudes_banco').select('*'), filtro)).then(listaDesdeDB),
 
-    solicitar: (datos) => esDemo() ? demo(s => {
-      const emp = s.empleados.find(e => e.id === datos.empleado);
-      if (!emp) throw new Error('Empleado no encontrado');
-      const disp = emp.dias + (emp.pendActivos ? emp.diasPend : 0);
-      if (datos.dias > disp) throw new Error('Los días solicitados (' + datos.dias + ') exceden tus días disponibles (' + disp + ').');
-      const choque = s.solicitudes.some(x => x.empleado === datos.empleado && x.estado !== 'rechazada' &&
-        !(datos.fin < x.inicio || datos.inicio > x.fin));
-      if (choque) throw new Error('Ya tienes una solicitud registrada que se traslapa con esas fechas.');
-      const nueva = Object.assign({
-        id: nuevoId('V'), tipo: 'vacaciones', estado: 'pendiente', resolucion: '',
-        aprobador: emp.jefe, creada: new Date().toISOString().slice(0, 10)
-      }, datos);
-      s.solicitudes.push(nueva);
-      emp.dias -= datos.dias;           // se reserva el saldo al enviar
-      return nueva;
-    }) : rest('/vacaciones', { method: 'POST', body: JSON.stringify(datos) }),
+    solicitar: (datos) => sb(cliente().rpc('solicitar_vacaciones', {
+      p_empleado: datos.empleado, p_inicio: datos.inicio, p_fin: datos.fin,
+      p_dias: datos.dias, p_comentario: datos.comentarioEmpleado || null
+    })).then(desdeDB),
 
-    solicitarBanco: (datos) => esDemo() ? demo(s => {
-      const emp = s.empleados.find(e => e.id === datos.empleado);
-      if (!emp) throw new Error('Empleado no encontrado');
-      if (datos.horas > emp.horas) throw new Error('Las horas solicitadas exceden tu banco disponible (' + emp.horas + ' h).');
-      const nueva = Object.assign({
-        id: nuevoId('B'), tipo: 'banco', estado: 'pendiente', resolucion: '',
-        aprobador: emp.jefe, creada: new Date().toISOString().slice(0, 10)
-      }, datos);
-      s.banco.push(nueva);
-      emp.horas -= datos.horas;
-      return nueva;
-    }) : rest('/banco-horas', { method: 'POST', body: JSON.stringify(datos) }),
+    solicitarBanco: (datos) => sb(cliente().rpc('solicitar_banco', {
+      p_empleado: datos.empleado, p_fecha: datos.fecha, p_horas: datos.horas,
+      p_hora_inicio: datos.horaInicio || null, p_hora_fin: datos.horaFin || null,
+      p_comentario: datos.comentarioEmpleado || null
+    })).then(desdeDB),
 
-    resolver: (id, tipo, estado, nota) => esDemo() ? demo(s => {
-      const col = tipo === 'banco' ? s.banco : s.solicitudes;
-      const r = col.find(x => x.id === id);
-      if (!r) throw new Error('Solicitud no encontrada');
-      if (r.estado !== 'pendiente') throw new Error('Esta solicitud ya fue resuelta.');
-      r.estado = estado;
-      r.resolucion = nota || '';
-      r.resuelta = new Date().toISOString().slice(0, 10);
-      if (estado === 'rechazada') {   // devolver saldo reservado
-        const emp = s.empleados.find(e => e.id === r.empleado);
-        if (emp) { if (tipo === 'banco') emp.horas += r.horas; else emp.dias += r.dias; }
-      }
-      return r;
-    }) : rest('/' + (tipo === 'banco' ? 'banco-horas' : 'vacaciones') + '/' + id, {
-      method: 'PATCH', body: JSON.stringify({ estado, nota })
-    })
+    resolver: (id, tipo, estado, nota) => (async () => {
+      await sb(cliente().rpc('resolver_solicitud', { p_id: id, p_tipo: tipo, p_estado: estado, p_nota: nota || '' }));
+      const tabla = tipo === 'banco' ? 'solicitudes_banco' : 'solicitudes_vacaciones';
+      return desdeDB(await sb(cliente().from(tabla).select('*').eq('id', id).single()));
+    })()
   };
 
   /* ---------------- Módulo médico ---------------- */
   const medico = {
-    cuestionario: (empleadoId) => esDemo()
-      ? demo(s => s.cuestionarios.find(c => c.empleado === empleadoId) || null)
-      : rest('/medico/cuestionario/' + empleadoId),
+    cuestionario: (empleadoId) => sb(cliente().from('historias_clinicas').select('*').eq('empleado', empleadoId).maybeSingle()).then(desdeDB),
 
-    /* Candado de consentimiento (aprendido en Medico ZX, donde vive como
-       disparador de PostgreSQL): sin consentimiento vigente no se puede
-       capturar ni actualizar la historia clínica. Esta validación es de UX
-       —igual que el resto del archivo— y debe repetirse en el servidor. */
-    guardarCuestionario: (empleadoId, datos) => esDemo() ? demo(s => {
-      const cons = s.consentimientos.find(c => c.empleado === empleadoId && c.vigente);
-      if (!cons) throw new Error('Debes otorgar tu consentimiento en Aviso de privacidad antes de capturar tu historia clínica.');
-      const i = s.cuestionarios.findIndex(c => c.empleado === empleadoId);
-      const reg = Object.assign({ empleado: empleadoId }, datos, { actualizado: new Date().toISOString().slice(0, 10) });
-      if (i >= 0) s.cuestionarios[i] = reg; else s.cuestionarios.push(reg);
-      bitacora('cuestionario.guardar', empleadoId, empleadoId, 'Actualización de historia clínica');
-      return reg;
-    }) : rest('/medico/cuestionario/' + empleadoId, { method: 'PUT', body: JSON.stringify(datos) }),
+    /* El candado de consentimiento ya no vive aquí: es un trigger real
+       en historias_clinicas (exigir_consentimiento). Si no hay consentimiento
+       vigente, la base rechaza el INSERT/UPDATE y ese mensaje es el que
+       se muestra — no hace falta repetir la validación en el cliente. */
+    guardarCuestionario: (empleadoId, datos) => (async () => {
+      const cuerpo = Object.assign({ empleado: empleadoId }, datos, { actualizado: new Date().toISOString() });
+      const fila = await sb(cliente().from('historias_clinicas').upsert(haciaDB(cuerpo), { onConflict: 'empleado' }).select().single());
+      return desdeDB(fila);
+    })(),
 
-    consultas: (empleadoId) => esDemo()
-      ? demo(s => empleadoId ? s.consultas.filter(c => c.empleado === empleadoId) : s.consultas)
-      : rest('/medico/consultas' + (empleadoId ? '?empleado=' + encodeURIComponent(empleadoId) : '')),
+    consultas: (empleadoId) => sb(empleadoId ? cliente().from('consultas').select('*').eq('empleado', empleadoId) : cliente().from('consultas').select('*')).then(listaDesdeDB),
 
-    registrarConsulta: (datos) => esDemo() ? demo(s => {
-      const c = Object.assign({ id: nuevoId('C'), fecha: new Date().toISOString().slice(0, 10) }, datos);
-      s.consultas.push(c);
-      const cita = s.citas.find(a => a.id === datos.citaId);
-      if (cita) cita.estado = 'atendida';
-      bitacora('consulta.registrar', c.id, datos.empleado, 'Alta de consulta médica');
-      return c;
-    }) : rest('/medico/consultas', { method: 'POST', body: JSON.stringify(datos) }),
+    registrarConsulta: (datos) => (async () => {
+      const { citaId } = datos;
+      const cuerpo = Object.assign({}, datos); delete cuerpo.citaId;
+      const c = Object.assign({ id: nuevoId('C'), fecha: hoy() }, cuerpo);
+      const fila = await sb(cliente().from('consultas').insert(haciaDB(c)).select().single());
+      if (citaId) await sb(cliente().from('citas').update({ estado: 'atendida' }).eq('id', citaId));
+      return desdeDB(fila);
+    })(),
 
-    /* --- 4. Evaluaciones de salud y dictamen de aptitud --- */
-    evaluaciones: (empleadoId) => esDemo()
-      ? demo(s => empleadoId ? s.evaluaciones.filter(x => x.empleado === empleadoId) : s.evaluaciones)
-      : rest('/medico/evaluaciones' + (empleadoId ? '?empleado=' + encodeURIComponent(empleadoId) : '')),
+    evaluaciones: (empleadoId) => sb(empleadoId ? cliente().from('evaluaciones').select('*').eq('empleado', empleadoId) : cliente().from('evaluaciones').select('*')).then(listaDesdeDB),
 
-    guardarEvaluacion: (datos) => esDemo() ? demo(s => {
-      const e = Object.assign({ id: nuevoId('EV'), estudios: [] }, datos);
-      s.evaluaciones.push(e);
-      const pe = s.programaEval.filter(x => x.empleado === datos.empleado && x.tipo === datos.tipo && x.estado !== 'realizada')
-        .sort((a, b) => a.programada.localeCompare(b.programada))[0];
-      if (pe) { pe.estado = 'realizada'; pe.evaluacion = e.id; pe.realizada = datos.fecha; }
-      bitacora('evaluacion.registrar', e.id, datos.empleado, 'Dictamen: ' + datos.dictamen);
-      return e;
-    }) : rest('/medico/evaluaciones', { method: 'POST', body: JSON.stringify(datos) }),
+    guardarEvaluacion: (datos) => (async () => {
+      const e = Object.assign({ id: nuevoId('EV') }, datos);
+      const fila = await sb(cliente().from('evaluaciones').insert(haciaDB(e)).select().single());
+      const pendientes = await sb(cliente().from('programa_evaluaciones').select('*')
+        .eq('empleado', datos.empleado).eq('tipo', datos.tipo).neq('estado', 'realizada'));
+      const pe = listaDesdeDB(pendientes).sort((a, b) => a.programada.localeCompare(b.programada))[0];
+      if (pe) await sb(cliente().from('programa_evaluaciones')
+        .update({ estado: 'realizada', evaluacion: e.id }).eq('id', pe.id));
+      return desdeDB(fila);
+    })(),
 
-    /* --- 6. Riesgos de trabajo (accidentes, incidentes, enfermedad de trabajo) --- */
-    riesgos: (empleadoId) => esDemo()
-      ? demo(s => empleadoId ? s.riesgos.filter(x => x.empleado === empleadoId) : s.riesgos)
-      : rest('/medico/riesgos' + (empleadoId ? '?empleado=' + encodeURIComponent(empleadoId) : '')),
+    riesgos: (empleadoId) => sb(empleadoId ? cliente().from('riesgos_trabajo').select('*').eq('empleado', empleadoId) : cliente().from('riesgos_trabajo').select('*')).then(listaDesdeDB),
 
-    guardarRiesgo: (datos) => esDemo() ? demo(s => {
-      const r = Object.assign({ id: nuevoId('RT'), seguimiento: [], ochoD: {}, reincorporacion: { fecha: '', condiciones: '' } }, datos);
-      s.riesgos.push(r);
-      bitacora('riesgo.registrar', r.id, datos.empleado, datos.tipo);
-      return r;
-    }) : rest('/medico/riesgos', { method: 'POST', body: JSON.stringify(datos) }),
+    guardarRiesgo: (datos) => (async () => {
+      const r = Object.assign({ id: nuevoId('RT'), seguimiento: [] }, datos);
+      return desdeDB(await sb(cliente().from('riesgos_trabajo').insert(haciaDB(r)).select().single()));
+    })(),
 
-    actualizarRiesgo: (id, campos) => esDemo() ? demo(s => {
-      const r = s.riesgos.find(x => x.id === id);
-      if (!r) throw new Error('Registro no encontrado');
-      Object.assign(r, campos);
-      return r;
-    }) : rest('/medico/riesgos/' + id, { method: 'PATCH', body: JSON.stringify(campos) }),
+    actualizarRiesgo: (id, campos) => sb(cliente().from('riesgos_trabajo').update(haciaDB(campos)).eq('id', id).select().single()).then(desdeDB),
 
-    agregarSeguimiento: (id, nota) => esDemo() ? demo(s => {
-      const r = s.riesgos.find(x => x.id === id);
-      if (!r) throw new Error('Registro no encontrado');
-      r.seguimiento = r.seguimiento || [];
-      r.seguimiento.push({ fecha: new Date().toISOString().slice(0, 10), nota });
-      return r;
-    }) : rest('/medico/riesgos/' + id + '/seguimiento', { method: 'POST', body: JSON.stringify({ nota }) }),
+    agregarSeguimiento: (id, nota) => anexarJSON('riesgos_trabajo', 'id', id, 'seguimiento', { fecha: hoy(), nota }),
 
-    /* --- 7. Incapacidades y ausentismo --- */
-    incapacidades: (empleadoId) => esDemo()
-      ? demo(s => empleadoId ? s.incapacidades.filter(x => x.empleado === empleadoId) : s.incapacidades)
-      : rest('/medico/incapacidades' + (empleadoId ? '?empleado=' + encodeURIComponent(empleadoId) : '')),
+    incapacidades: (empleadoId) => sb(empleadoId ? cliente().from('incapacidades').select('*').eq('empleado', empleadoId) : cliente().from('incapacidades').select('*')).then(listaDesdeDB),
 
-    guardarIncapacidad: (datos) => esDemo() ? demo(s => {
-      const i = Object.assign({ id: nuevoId('IN'), estado: 'vigente' }, datos);
-      s.incapacidades.push(i);
-      bitacora('incapacidad.registrar', i.id, datos.empleado, i.dias + ' días · ' + i.tipo);
-      return i;
-    }) : rest('/medico/incapacidades', { method: 'POST', body: JSON.stringify(datos) }),
+    guardarIncapacidad: (datos) => (async () => {
+      const i = Object.assign({ id: nuevoId('IN') }, datos);
+      return desdeDB(await sb(cliente().from('incapacidades').insert(haciaDB(i)).select().single()));
+    })(),
 
-    /* --- 8. Documentos y evidencias --- */
-    documentos: (empleadoId) => esDemo()
-      ? demo(s => empleadoId ? s.docsMedicos.filter(x => x.empleado === empleadoId) : s.docsMedicos)
-      : rest('/medico/documentos?empleado=' + encodeURIComponent(empleadoId || '')),
+    documentos: (empleadoId) => sb(empleadoId ? cliente().from('documentos_medicos').select('*').eq('empleado', empleadoId) : cliente().from('documentos_medicos').select('*')).then(listaDesdeDB),
 
-    guardarDocumento: (datos) => esDemo() ? demo(s => {
-      const d2 = Object.assign({ id: nuevoId('DM'), fecha: new Date().toISOString().slice(0, 10), tam: '—' }, datos);
-      s.docsMedicos.push(d2);
-      bitacora('documento.registrar', d2.id, datos.empleado, datos.tipo);
-      return d2;
-    }) : rest('/medico/documentos', { method: 'POST', body: JSON.stringify(datos) }),
+    guardarDocumento: (datos) => (async () => {
+      const d2 = Object.assign({ id: nuevoId('DM'), fecha: hoy() }, datos);
+      return desdeDB(await sb(cliente().from('documentos_medicos').insert(haciaDB(d2)).select().single()));
+    })(),
 
-    /* --- 9. Seguimiento de salud ocupacional --- */
-    vigilancia: (empleadoId) => esDemo()
-      ? demo(s => s.vigilancia.find(v => v.empleado === empleadoId) ||
-          { empleado: empleadoId, programa: '', periodicidad: '', recomendaciones: '', restricciones: '', proximaValoracion: '', casos: [] })
-      : rest('/medico/vigilancia/' + empleadoId),
+    vigilancia: (empleadoId) => sb(cliente().from('vigilancia_epidemiologica').select('*').eq('empleado', empleadoId).maybeSingle())
+          .then(f => desdeDB(f) || { empleado: empleadoId, programa: '', periodicidad: '', recomendaciones: '', restricciones: '', proximaValoracion: '', casos: [] }),
 
-    guardarVigilancia: (empleadoId, datos) => esDemo() ? demo(s => {
-      const i = s.vigilancia.findIndex(v => v.empleado === empleadoId);
-      const reg = Object.assign({ empleado: empleadoId, casos: [] }, i >= 0 ? s.vigilancia[i] : {}, datos);
-      if (i >= 0) s.vigilancia[i] = reg; else s.vigilancia.push(reg);
-      return reg;
-    }) : rest('/medico/vigilancia/' + empleadoId, { method: 'PUT', body: JSON.stringify(datos) }),
+    guardarVigilancia: (empleadoId, datos) => (async () => {
+      const cuerpo = Object.assign({ empleado: empleadoId }, datos);
+      return desdeDB(await sb(cliente().from('vigilancia_epidemiologica').upsert(haciaDB(cuerpo), { onConflict: 'empleado' }).select().single()));
+    })(),
 
-    /* --- Ciclo de vida del expediente (alta / baja) --- */
-    expedientes: () => esDemo() ? demo(s => s.expedientesMed) : rest('/medico/expedientes'),
+    expedientes: () => sb(cliente().from('expedientes_medicos_estado').select('*')).then(listaDesdeDB),
 
-    expediente: (empleadoId) => esDemo()
-      ? demo(s => s.expedientesMed.find(x => x.empleado === empleadoId) ||
-          { empleado: empleadoId, estado: 'sin_iniciar', alta: '', altaPor: '', baja: '', bajaPor: '', motivoBaja: '', conservarHasta: '' })
-      : rest('/medico/expedientes/' + empleadoId),
+    expediente: (empleadoId) => sb(cliente().from('expedientes_medicos_estado').select('*').eq('empleado', empleadoId).maybeSingle())
+          .then(f => desdeDB(f) || { empleado: empleadoId, estado: 'sin_iniciar', alta: '', altaPor: '', baja: '', bajaPor: '', motivoBaja: '', conservarHasta: '' }),
 
-    activarExpediente: (empleadoId, quien) => esDemo() ? demo(s => {
-      let e = s.expedientesMed.find(x => x.empleado === empleadoId);
-      if (e && e.estado === 'activo') throw new Error('El expediente ya está activo.');
-      if (!e) { e = { empleado: empleadoId }; s.expedientesMed.push(e); }
-      Object.assign(e, {
-        estado: 'activo', alta: new Date().toISOString().slice(0, 10), altaPor: quien,
-        baja: '', bajaPor: '', motivoBaja: '', conservarHasta: ''
-      });
-      bitacora('expediente.alta', empleadoId, empleadoId, 'Expediente médico activado');
-      return e;
-    }) : rest('/medico/expedientes/' + empleadoId + '/alta', { method: 'POST' }),
+    activarExpediente: (empleadoId, quien) => (async () => {
+      const cuerpo = { empleado: empleadoId, estado: 'activo', alta: hoy(), altaPor: quien, baja: null, bajaPor: null, motivoBaja: null, conservarHasta: null };
+      return desdeDB(await sb(cliente().from('expedientes_medicos_estado').upsert(haciaDB(cuerpo), { onConflict: 'empleado' }).select().single()));
+    })(),
 
-    darBajaExpediente: (empleadoId, quien, motivo, conservarHasta) => esDemo() ? demo(s => {
-      const e = s.expedientesMed.find(x => x.empleado === empleadoId);
-      if (!e || e.estado !== 'activo') throw new Error('El expediente no está activo.');
-      Object.assign(e, {
-        estado: 'baja', baja: new Date().toISOString().slice(0, 10), bajaPor: quien,
-        motivoBaja: motivo, conservarHasta: conservarHasta
-      });
-      const emp = s.empleados.find(x => x.id === empleadoId);
-      if (emp) emp.estatus = 'baja';
-      bitacora('expediente.baja', empleadoId, empleadoId, 'Baja: ' + motivo + ' · conservar hasta ' + conservarHasta);
-      return e;
-    }) : rest('/medico/expedientes/' + empleadoId + '/baja', { method: 'POST', body: JSON.stringify({ motivo, conservarHasta }) }),
+    darBajaExpediente: (empleadoId, quien, motivo, conservarHasta) => (async () => {
+      const cuerpo = { empleado: empleadoId, estado: 'baja', baja: hoy(), bajaPor: quien, motivoBaja: motivo, conservarHasta };
+      const fila = await sb(cliente().from('expedientes_medicos_estado').update(haciaDB(cuerpo)).eq('empleado', empleadoId).select().single());
+      return desdeDB(fila);
+    })(),
 
-    /* --- Programa de evaluaciones (programadas vs realizadas) --- */
-    programa: (empleadoId) => esDemo()
-      ? demo(s => empleadoId ? s.programaEval.filter(x => x.empleado === empleadoId) : s.programaEval)
-      : rest('/medico/programa' + (empleadoId ? '?empleado=' + encodeURIComponent(empleadoId) : '')),
+    programa: (empleadoId) => sb(empleadoId ? cliente().from('programa_evaluaciones').select('*').eq('empleado', empleadoId) : cliente().from('programa_evaluaciones').select('*')).then(listaDesdeDB),
 
-    programar: (datos) => esDemo() ? demo(s => {
-      const p = Object.assign({ id: nuevoId('PE'), estado: 'programada', evaluacion: '' }, datos);
-      s.programaEval.push(p);
-      bitacora('programa.crear', p.id, datos.empleado, datos.tipo + ' · ' + datos.programada);
-      return p;
-    }) : rest('/medico/programa', { method: 'POST', body: JSON.stringify(datos) }),
+    programar: (datos) => (async () => {
+      const p = Object.assign({ id: nuevoId('PE') }, datos);
+      return desdeDB(await sb(cliente().from('programa_evaluaciones').insert(haciaDB(p)).select().single()));
+    })(),
 
-    /* --- Vacunación y campañas preventivas --- */
-    vacunas: (empleadoId) => esDemo()
-      ? demo(s => empleadoId ? s.vacunas.filter(x => x.empleado === empleadoId) : s.vacunas)
-      : rest('/medico/vacunas' + (empleadoId ? '?empleado=' + encodeURIComponent(empleadoId) : '')),
+    vacunas: (empleadoId) => sb(empleadoId ? cliente().from('vacunas').select('*').eq('empleado', empleadoId) : cliente().from('vacunas').select('*')).then(listaDesdeDB),
 
-    guardarVacuna: (datos) => esDemo() ? demo(s => {
-      const v = Object.assign({ id: nuevoId('VA') }, datos);
-      s.vacunas.push(v);
-      bitacora('vacuna.registrar', v.id, datos.empleado, datos.biologico + ' · ' + datos.dosis);
-      return v;
-    }) : rest('/medico/vacunas', { method: 'POST', body: JSON.stringify(datos) }),
+    guardarVacuna: (datos) => (async () => desdeDB(await sb(cliente().from('vacunas').insert(haciaDB(Object.assign({ id: nuevoId('VA') }, datos))).select().single())))(),
 
-    campanas: () => esDemo() ? demo(s => s.campanas) : rest('/medico/campanas'),
+    campanas: () => sb(cliente().from('campanas_vacunacion').select('*')).then(listaDesdeDB),
 
-    guardarCampana: (datos) => esDemo() ? demo(s => {
-      const c = Object.assign({ id: nuevoId('CP'), aplicadas: 0 }, datos);
-      s.campanas.unshift(c);
-      bitacora('campana.crear', c.id, '', datos.nombre);
-      return c;
-    }) : rest('/medico/campanas', { method: 'POST', body: JSON.stringify(datos) }),
+    guardarCampana: (datos) => (async () => desdeDB(await sb(cliente().from('campanas_vacunacion').insert(haciaDB(Object.assign({ id: nuevoId('CP'), aplicadas: 0 }, datos))).select().single())))(),
 
-    guardarCaso: (empleadoId, caso) => esDemo() ? demo(s => {
-      let v = s.vigilancia.find(x => x.empleado === empleadoId);
-      if (!v) { v = { empleado: empleadoId, programa: '', periodicidad: '', recomendaciones: '', restricciones: '', proximaValoracion: '', casos: [] }; s.vigilancia.push(v); }
-      v.casos = v.casos || [];
-      v.casos.push(Object.assign({ fecha: new Date().toISOString().slice(0, 10), estado: 'abierto' }, caso));
-      return v;
-    }) : rest('/medico/vigilancia/' + empleadoId + '/casos', { method: 'POST', body: JSON.stringify(caso) })
+    guardarCaso: (empleadoId, caso) => (async () => {
+      await cliente().from('vigilancia_epidemiologica').upsert(haciaDB({ empleado: empleadoId }), { onConflict: 'empleado', ignoreDuplicates: true });
+      return anexarJSON('vigilancia_epidemiologica', 'empleado', empleadoId, 'casos', Object.assign({ fecha: hoy(), estado: 'abierto' }, caso));
+    })()
   };
 
   /* ---------------- Citas ---------------- */
   const citas = {
-    agenda: () => esDemo() ? demo(s => s.agenda) : rest('/citas/agenda'),
-    lista: (filtro) => esDemo() ? demo(s => aplicaFiltro(s.citas, filtro)) : rest('/citas' + qs(filtro)),
+    agenda: () => sb(cliente().from('agenda_medico_config').select('*').eq('id', true).single()).then(desdeDB),
+    lista: (filtro) => sb(conFiltro(cliente().from('citas').select('*'), filtro)).then(listaDesdeDB),
 
-    disponibilidad: (fecha) => esDemo() ? demo(s => {
+    disponibilidad: (fecha) => (async () => {
+      const ag = await citas.agenda();
       const dia = new Date(fecha + 'T12:00:00').getDay();
-      const habil = s.agenda.diasHabiles.indexOf(dia) >= 0;
-      const bloqueo = s.agenda.bloqueos.find(b => b.fecha === fecha);
-      const ocupadas = s.citas.filter(c => c.fecha === fecha && c.estado !== 'cancelada').map(c => c.hora);
+      const habil = ag.diasHabiles.indexOf(dia) >= 0;
+      const bloqueo = (ag.bloqueos || []).find(b => b.fecha === fecha);
+      const delDia = await citas.lista({ fecha });
+      const ocupadas = delDia.filter(c => c.estado !== 'cancelada').map(c => c.hora);
       return {
         fecha, habil, bloqueo: bloqueo ? bloqueo.motivo : null,
-        slots: s.agenda.horarios.map(h => ({ hora: h, libre: habil && !bloqueo && ocupadas.indexOf(h) < 0 }))
+        slots: ag.horarios.map(h => ({ hora: h, libre: habil && !bloqueo && ocupadas.indexOf(h) < 0 }))
       };
-    }) : rest('/citas/disponibilidad?fecha=' + encodeURIComponent(fecha)),
+    })(),
 
-    agendar: (datos) => esDemo() ? demo(s => {
-      const ocupada = s.citas.some(c => c.fecha === datos.fecha && c.hora === datos.hora && c.estado !== 'cancelada');
-      if (ocupada) throw new Error('Ese horario acaba de ocuparse. Elige otro.');
-      const propia = s.citas.some(c => c.empleado === datos.empleado && c.fecha === datos.fecha && c.estado === 'confirmada');
-      if (propia) throw new Error('Ya tienes una cita confirmada ese día.');
-      const c = Object.assign({
-        id: nuevoId('A'), medico: s.agenda.medico, estado: 'confirmada',
-        creada: new Date().toISOString().slice(0, 10)
-      }, datos);
-      s.citas.push(c);
-      return c;
-    }) : rest('/citas', { method: 'POST', body: JSON.stringify(datos) }),
+    agendar: (datos) => (async () => {
+      const delDia = await citas.lista({ fecha: datos.fecha });
+      if (delDia.some(c => c.hora === datos.hora && c.estado !== 'cancelada')) throw new Error('Ese horario acaba de ocuparse. Elige otro.');
+      if (delDia.some(c => c.empleado === datos.empleado && c.estado === 'confirmada')) throw new Error('Ya tienes una cita confirmada ese día.');
+      const ag = await citas.agenda();
+      const c = Object.assign({ id: nuevoId('A'), medico: ag.medico, estado: 'confirmada', creada: hoy() }, datos);
+      return desdeDB(await sb(cliente().from('citas').insert(haciaDB(c)).select().single()));
+    })(),
 
-    cancelar: (id, motivo) => esDemo() ? demo(s => {
-      const c = s.citas.find(x => x.id === id);
-      if (!c) throw new Error('Cita no encontrada');
-      c.estado = 'cancelada';
-      c.motivoCancelacion = motivo || '';
-      return c;
-    }) : rest('/citas/' + id, { method: 'DELETE', body: JSON.stringify({ motivo }) })
+    cancelar: (id, motivo) => sb(cliente().from('citas').update({ estado: 'cancelada' }).eq('id', id).select().single()).then(desdeDB)
   };
 
   /* ---------------- RRHH ---------------- */
-  const rrhh = {
-    movimientos: (filtro) => esDemo() ? demo(s => aplicaFiltro(s.movimientos, filtro)) : rest('/rrhh/movimientos' + qs(filtro)),
-    movimiento: (id) => esDemo() ? demo(s => s.movimientos.find(m => m.id === id) || null) : rest('/rrhh/movimientos/' + id),
+  const FIRMAS_RHF34 = ['Jefe directo', 'Gerente de área', 'Dirección General', 'Recursos Humanos'];
 
-    crearMovimiento: (datos) => esDemo() ? demo(s => {
-      const n = s.movimientos.length + 4;
-      const folio = 'RHF34-' + String(n).padStart(4, '0');
+  const rrhh = {
+    movimientos: (filtro) => sb(conFiltro(cliente().from('movimientos_rhf34').select('*'), filtro)).then(listaDesdeDB),
+    movimiento: (id) => sb(cliente().from('movimientos_rhf34').select('*').eq('id', id).maybeSingle()).then(desdeDB),
+
+    crearMovimiento: (datos) => (async () => {
+      /* Folio por conteo. Con volumen alto conviene
+         una secuencia de Postgres para evitar folios repetidos en carreras
+         simultáneas; con el volumen actual de RHF-34 no es prioritario. */
+      const { count } = await cliente().from('movimientos_rhf34').select('*', { count: 'exact', head: true });
+      const folio = 'RHF34-' + String((count || 0) + 4).padStart(4, '0');
       const m = Object.assign({
-        id: folio, folio, estado: datos.estado || 'borrador',
-        elaboracion: new Date().toISOString().slice(0, 10),
-        firmas: global.ZX_DEMO.CAT.firmasRHF34.map(r => ({ rol: r, quien: null, estado: 'pendiente', fecha: '', nota: '' })),
+        id: folio, folio, estado: datos.estado || 'borrador', elaboracion: hoy(),
+        firmas: FIRMAS_RHF34.map(r => ({ rol: r, quien: null, estado: 'pendiente', fecha: '', nota: '' })),
         adjuntos: []
       }, datos);
-      s.movimientos.unshift(m);
-      return m;
-    }) : rest('/rrhh/movimientos', { method: 'POST', body: JSON.stringify(datos) }),
+      return desdeDB(await sb(cliente().from('movimientos_rhf34').insert(haciaDB(m)).select().single()));
+    })(),
 
-    firmar: (id, rolFirma, quien, decision, nota) => esDemo() ? demo(s => {
-      const m = s.movimientos.find(x => x.id === id);
+    firmar: (id, rolFirma, quien, decision, nota) => (async () => {
+      const m = await rrhh.movimiento(id);
       if (!m) throw new Error('Movimiento no encontrado');
       const f = m.firmas.find(x => x.rol === rolFirma);
       if (!f) throw new Error('Etapa de firma no válida');
       if (f.estado !== 'pendiente') throw new Error('Esa etapa ya fue resuelta.');
       f.estado = decision === 'rechazar' ? 'rechazado' : 'firmado';
-      f.quien = quien;
-      f.fecha = new Date().toISOString().slice(0, 10);
-      f.nota = nota || '';
-      if (f.estado === 'rechazado') m.estado = 'rechazado';
-      else m.estado = m.firmas.every(x => x.estado === 'firmado') ? 'completado' : 'en_firma';
-      bitacora('movimiento.firmar', m.id, m.empleado, rolFirma + ': ' + f.estado);
-      return m;
-    }) : rest('/rrhh/movimientos/' + id + '/firmas', {
-      method: 'POST', body: JSON.stringify({ rol: rolFirma, decision, nota })
-    }),
+      f.quien = quien; f.fecha = hoy(); f.nota = nota || '';
+      const nuevoEstado = f.estado === 'rechazado' ? 'rechazado' : (m.firmas.every(x => x.estado === 'firmado') ? 'completado' : 'en_firma');
+      return desdeDB(await sb(cliente().from('movimientos_rhf34')
+        .update({ firmas: m.firmas, estado: nuevoEstado }).eq('id', id).select().single()));
+    })(),
 
-    enviarAFirma: (id) => esDemo() ? demo(s => {
-      const m = s.movimientos.find(x => x.id === id);
-      if (!m) throw new Error('Movimiento no encontrado');
-      m.estado = 'en_firma';
-      return m;
-    }) : rest('/rrhh/movimientos/' + id + '/enviar', { method: 'POST' }),
+    enviarAFirma: (id) => sb(cliente().from('movimientos_rhf34').update({ estado: 'en_firma' }).eq('id', id).select().single()).then(desdeDB),
 
-    expediente: (empleadoId) => esDemo()
-      ? demo(s => s.expedientes.find(x => x.empleado === empleadoId) || { empleado: empleadoId, docs: [] })
-      : rest('/rrhh/expedientes/' + empleadoId),
+    expediente: (empleadoId) => sb(cliente().from('expedientes_documentales').select('*').eq('empleado', empleadoId).maybeSingle())
+          .then(f => desdeDB(f) || { empleado: empleadoId, docs: [] }),
 
-    registrarDoc: (empleadoId, doc) => esDemo() ? demo(s => {
-      let ex = s.expedientes.find(x => x.empleado === empleadoId);
-      if (!ex) { ex = { empleado: empleadoId, docs: [] }; s.expedientes.push(ex); }
-      ex.docs.push(Object.assign({ fecha: new Date().toISOString().slice(0, 10) }, doc));
-      return ex;
-    }) : rest('/rrhh/expedientes/' + empleadoId + '/documentos', { method: 'POST', body: JSON.stringify(doc) })
+    registrarDoc: (empleadoId, doc) => (async () => {
+      await cliente().from('expedientes_documentales').upsert(haciaDB({ empleado: empleadoId, docs: [] }), { onConflict: 'empleado', ignoreDuplicates: true });
+      return anexarJSON('expedientes_documentales', 'empleado', empleadoId, 'docs', Object.assign({ fecha: hoy() }, doc));
+    })()
   };
-
-  /* ---------------- utilidades ---------------- */
-  function aplicaFiltro(arr, filtro) {
-    if (!filtro) return arr;
-    return arr.filter(x => Object.keys(filtro).every(k => filtro[k] == null || filtro[k] === '' || x[k] === filtro[k]));
-  }
-  function qs(filtro) {
-    if (!filtro) return '';
-    const p = Object.keys(filtro).filter(k => filtro[k] != null && filtro[k] !== '')
-      .map(k => encodeURIComponent(k) + '=' + encodeURIComponent(filtro[k]));
-    return p.length ? '?' + p.join('&') : '';
-  }
 
   /* ============================================================
      ETAPA 1 — Análisis clínicos (SQF)
-     Flujo: programación → resultado → validación → desviación →
-     caso de seguimiento → valoración → alta/cierre.
      ============================================================ */
+  const ESTATUS_CASO_VALIDOS = ['pendiente_valoracion', 'en_seguimiento', 'pendiente_valoracion_posterior', 'alta_cierre', 'no_requiere'];
+
   const analisis = {
-    programacion: (filtro) => esDemo()
-      ? demo(s => aplicaFiltro(s.programacionAnalisis, filtro))
-      : rest('/analisis/programacion' + qs(filtro)),
+    programacion: (filtro) => sb(conFiltro(cliente().from('programacion_analisis').select('*'), filtro)).then(listaDesdeDB),
 
-    programar: (datos) => esDemo() ? demo(s => {
-      const p = Object.assign({ id: nuevoId('PA'), estado: 'programado', fechaEvaluacion: '' }, datos);
-      s.programacionAnalisis.push(p);
-      bitacora('analisis.programar', p.id, datos.empleado, datos.tipoEvaluacion + ' · ' + datos.programada);
-      return p;
-    }) : rest('/analisis/programacion', { method: 'POST', body: JSON.stringify(datos) }),
+    programar: (datos) => (async () => desdeDB(await sb(cliente().from('programacion_analisis').insert(haciaDB(Object.assign({ id: nuevoId('PA'), estado: 'programado' }, datos))).select().single())))(),
 
-    resultados: (filtro) => esDemo()
-      ? demo(s => aplicaFiltro(s.resultados, filtro))
-      : rest('/analisis/resultados' + qs(filtro)),
+    resultados: (filtro) => sb(conFiltro(cliente().from('resultados_analisis').select('*'), filtro)).then(listaDesdeDB),
 
-    /* Registrar un resultado. Nace SIEMPRE como pendiente de validación:
-       quien lo captura no decide si hay desviación; eso lo valida el médico. */
-    registrarResultado: (datos) => esDemo() ? demo(s => {
-      const r = Object.assign({
-        id: nuevoId('RA'), valoracion: 'pendiente_validacion',
-        validadoPor: '', fechaValidacion: ''
-      }, datos);
-      s.resultados.push(r);
-      const p = s.programacionAnalisis.find(x => x.id === datos.programacion);
-      if (p) { p.estado = 'realizado'; p.fechaEvaluacion = p.fechaEvaluacion || datos.fechaToma; }
-      bitacora('analisis.resultado', r.id, datos.empleado, datos.analisis);
-      return r;
-    }) : rest('/analisis/resultados', { method: 'POST', body: JSON.stringify(datos) }),
+    registrarResultado: (datos) => (async () => {
+      const r = Object.assign({ id: nuevoId('RA') }, datos);
+      const fila = await sb(cliente().from('resultados_analisis').insert(haciaDB(r)).select().single());
+      if (datos.programacion) {
+        const p = await sb(cliente().from('programacion_analisis').select('*').eq('id', datos.programacion).maybeSingle());
+        if (p) await sb(cliente().from('programacion_analisis')
+          .update({ estado: 'realizado', fecha_evaluacion: p.fecha_evaluacion || datos.fechaToma }).eq('id', datos.programacion));
+      }
+      return desdeDB(fila);
+    })(),
 
-    /* Validación médica: marca normal o desviación. Si es desviación,
-       abre automáticamente el caso en "Pendiente de valoración". */
-    validarResultado: (id, valoracion, quien, nota) => esDemo() ? demo(s => {
-      const r = s.resultados.find(x => x.id === id);
-      if (!r) throw new Error('Resultado no encontrado');
+    /* La apertura del caso por desviación ya es un trigger real
+       (abrir_caso_por_desviacion). Aquí sólo se actualiza el resultado
+       y se recupera el caso, si el trigger creó uno, para devolver la
+       forma { resultado, caso }. */
+    validarResultado: (id, valoracion, quien, nota) => (async () => {
       if (valoracion !== 'normal' && valoracion !== 'desviacion') throw new Error('Valoración no válida');
-      r.valoracion = valoracion;
-      r.validadoPor = quien;
-      r.fechaValidacion = new Date().toISOString().slice(0, 10);
-      r.notaValidacion = nota || '';
+      const fila = await sb(cliente().from('resultados_analisis')
+        .update({ valoracion, validado_por: quien, fecha_validacion: hoy() }).eq('id', id).select().single());
       let caso = null;
-      if (valoracion === 'desviacion' && !s.casos.some(c => c.resultado === id)) {
-        caso = {
-          id: nuevoId('CS'), empleado: r.empleado, resultado: r.id,
-          fechaDeteccion: r.fechaValidacion,
-          motivo: r.analisis + ': ' + r.resultado,
-          estatus: 'pendiente_valoracion',
-          valoracion: '', fechaCita: '', indicaciones: '', estudiosPosteriores: '',
-          proximaValoracion: '', fechaCierre: '', restriccion: '', abiertoPor: quien,
-          notas: [{ fecha: r.fechaValidacion, autor: quien, nota: 'Caso abierto automáticamente por desviación validada.' }]
-        };
-        s.casos.push(caso);
-        bitacora('analisis.caso_abierto', caso.id, r.empleado, r.analisis);
+      if (valoracion === 'desviacion') {
+        const casos = await sb(cliente().from('casos_analisis').select('*').eq('resultado', id));
+        if (casos && casos[0]) caso = desdeDB(casos[0]);
       }
-      bitacora('analisis.validar', id, r.empleado, valoracion);
-      return { resultado: r, caso: caso };
-    }) : rest('/analisis/resultados/' + id + '/validacion', {
-      method: 'POST', body: JSON.stringify({ valoracion, nota })
-    }),
+      return { resultado: desdeDB(fila), caso };
+    })(),
 
-    casos: (filtro) => esDemo() ? demo(s => aplicaFiltro(s.casos, filtro)) : rest('/analisis/casos' + qs(filtro)),
+    casos: (filtro) => sb(conFiltro(cliente().from('casos_analisis').select('*'), filtro)).then(listaDesdeDB),
+    caso: (id) => sb(cliente().from('casos_analisis').select('*').eq('id', id).maybeSingle()).then(desdeDB),
 
-    caso: (id) => esDemo() ? demo(s => s.casos.find(c => c.id === id) || null) : rest('/analisis/casos/' + id),
+    abrirCaso: (datos) => (async () => desdeDB(await sb(cliente().from('casos_analisis')
+      .insert(haciaDB(Object.assign({ id: nuevoId('CS'), estatus: 'pendiente_valoracion', notas: [], fechaDeteccion: hoy() }, datos))).select().single())))(),
 
-    abrirCaso: (datos) => esDemo() ? demo(s => {
-      const c = Object.assign({
-        id: nuevoId('CS'), estatus: 'pendiente_valoracion', notas: [],
-        fechaDeteccion: new Date().toISOString().slice(0, 10),
-        valoracion: '', fechaCita: '', indicaciones: '', estudiosPosteriores: '',
-        proximaValoracion: '', fechaCierre: '', restriccion: ''
-      }, datos);
-      s.casos.push(c);
-      bitacora('analisis.caso_abierto', c.id, datos.empleado, datos.motivo);
-      return c;
-    }) : rest('/analisis/casos', { method: 'POST', body: JSON.stringify(datos) }),
-
-    /* Actualiza el caso y controla la transición de estatus.
-       Sólo se permiten los cinco estatus acordados en la propuesta v3. */
-    actualizarCaso: (id, campos, quien) => esDemo() ? demo(s => {
-      const c = s.casos.find(x => x.id === id);
-      if (!c) throw new Error('Caso no encontrado');
-      const validos = (global.ZX_DEMO.CAT.estatusCaso || []).map(e => e.c);
-      if (campos.estatus && validos.indexOf(campos.estatus) < 0) throw new Error('Estatus no válido');
-      if (campos.estatus === 'alta_cierre' && !campos.fechaCierre && !c.fechaCierre) {
-        campos.fechaCierre = new Date().toISOString().slice(0, 10);
-      }
-      const antes = c.estatus;
-      Object.assign(c, campos);
+    actualizarCaso: (id, campos, quien) => (async () => {
+      if (campos.estatus && ESTATUS_CASO_VALIDOS.indexOf(campos.estatus) < 0) throw new Error('Estatus no válido');
+      const actual = await sb(cliente().from('casos_analisis').select('*').eq('id', id).single());
+      if (campos.estatus === 'alta_cierre' && !campos.fechaCierre && !actual.fecha_cierre) campos.fechaCierre = hoy();
+      const antes = actual.estatus;
+      const cambios = haciaDB(campos);
       if (campos.estatus && campos.estatus !== antes) {
-        c.notas = c.notas || [];
-        c.notas.push({
-          fecha: new Date().toISOString().slice(0, 10), autor: quien,
-          nota: 'Cambio de estatus: ' + antes + ' → ' + campos.estatus
-        });
-        bitacora('analisis.caso_estatus', id, c.empleado, antes + ' → ' + campos.estatus);
-      } else {
-        bitacora('analisis.caso_actualizar', id, c.empleado, 'Actualización del seguimiento');
+        const notas = actual.notas || [];
+        notas.push({ fecha: hoy(), autor: quien, nota: 'Cambio de estatus: ' + antes + ' → ' + campos.estatus });
+        cambios.notas = notas;
       }
-      return c;
-    }) : rest('/analisis/casos/' + id, { method: 'PATCH', body: JSON.stringify(campos) }),
+      return desdeDB(await sb(cliente().from('casos_analisis').update(cambios).eq('id', id).select().single()));
+    })(),
 
-    notaCaso: (id, nota, quien) => esDemo() ? demo(s => {
-      const c = s.casos.find(x => x.id === id);
-      if (!c) throw new Error('Caso no encontrado');
-      c.notas = c.notas || [];
-      c.notas.push({ fecha: new Date().toISOString().slice(0, 10), autor: quien, nota: nota });
-      bitacora('analisis.caso_nota', id, c.empleado, 'Nota de seguimiento');
-      return c;
-    }) : rest('/analisis/casos/' + id + '/notas', { method: 'POST', body: JSON.stringify({ nota }) })
+    notaCaso: (id, nota, quien) => anexarJSON('casos_analisis', 'id', id, 'notas', { fecha: hoy(), autor: quien, nota })
   };
 
   /* ---------------- Auditoría / administración ---------------- */
   const auditoria = {
-    lista: (filtro) => esDemo()
-      ? demo(s => aplicaFiltro(s.bitacora, filtro).slice().reverse())
-      : rest('/admin/bitacora' + qs(filtro)),
-    registrar: (accion, entidad, afectado, detalle) => {
-      bitacora(accion, entidad, afectado, detalle);
-      if (!esDemo()) return rest('/admin/bitacora', { method: 'POST', body: JSON.stringify({ accion, entidad, afectado, detalle }) });
-      return Promise.resolve(null);
-    },
-    cambiarEstatus: (empleadoId, estatus) => esDemo() ? demo(s => {
-      const e = s.empleados.find(x => x.id === empleadoId);
-      if (!e) throw new Error('Usuario no encontrado');
-      e.estatus = estatus;
-      bitacora('usuario.estatus', empleadoId, empleadoId, 'Estatus: ' + estatus);
-      return e;
-    }) : rest('/admin/usuarios/' + empleadoId + '/estatus', { method: 'PATCH', body: JSON.stringify({ estatus }) })
+    lista: (filtro) => sb(conFiltro(cliente().from('bitacora').select('*').order('fecha', { ascending: false }), filtro)).then(listaDesdeDB),
+
+    /* La bitácora la escriben triggers del servidor
+       (usuario.acceso/estatus, admin.perfil_*, privacidad.*, y las que
+       se vayan agregando) — no hay INSERT abierto al cliente, así que
+       esta llamada es un no-op. Acciones que todavía
+       no tienen su propio trigger (consultas, evaluaciones, RHF-34...)
+       quedan sin bitácora por ahora: pendiente agregar más triggers. */
+    registrar: () => Promise.resolve(null),
+
+    cambiarEstatus: (empleadoId, estatus) => sb(cliente().from('empleados').update({ estatus }).eq('id', empleadoId).select().single()).then(desdeDB)
   };
 
   /* ============================================================
      Privacidad — consentimiento y derechos ARCO (LFPDPPP)
-     Nuevo: lo que Medico ZX probó contra un backend real (Supabase +
-     disparador que impide guardar sin consentimiento) y que el portal
-     no tenía. Aquí el aviso versionado vive en ZX_DEMO.CAT.avisoPrivacidad;
-     esta capa sólo guarda quién consintió y las solicitudes ARCO.
      ============================================================ */
   const privacidad = {
-    /* Consentimiento VIGENTE de una persona, o null si nunca lo otorgó
-       o lo revocó. Null también si la versión que otorgó ya no es la
-       vigente (ver otorgar: cambiar de versión exige volver a consentir). */
-    consentimiento: (empleadoId) => esDemo() ? demo(s => {
-      const version = (global.ZX_DEMO.CAT.avisoPrivacidad || {}).version;
-      return s.consentimientos.find(c => c.empleado === empleadoId && c.vigente && c.version === version) || null;
-    }) : rest('/privacidad/consentimiento/' + empleadoId),
+    /* Aviso vigente, desde la caché en sessionStorage (refrescada en el login y
+       en segundo plano) porque page-privacidad.js lo necesita de forma
+       síncrona al construir la pantalla. */
+    avisoSync: () => (leerCache(config.avisoCacheKey) || { version: 'v1', vigente: false, pendientes: [], texto: '', responsable: '', domicilio: '', areaResponsable: '', contacto: '', actualizado: '' }),
 
-    /* Panel del servicio médico / administración: quién consintió y quién no
-       (art. 18 — evidencia de cumplimiento del deber de seguridad). */
-    listaConsentimientos: () => esDemo() ? demo(s => s.consentimientos) : rest('/privacidad/consentimientos'),
+    consentimiento: (empleadoId) => (async () => {
+      const version = privacidad.avisoSync().version;
+      const filas = await sb(cliente().from('consentimientos').select('*')
+        .eq('empleado', empleadoId).eq('vigente', true).eq('version', version));
+      return filas && filas[0] ? desdeDB(filas[0]) : null;
+    })(),
 
-    otorgar: (empleadoId) => esDemo() ? demo(s => {
-      const version = (global.ZX_DEMO.CAT.avisoPrivacidad || {}).version;
-      /* Revoca cualquier consentimiento anterior vigente (de una versión
-         distinta) antes de registrar el nuevo, para no dejar dos vigentes. */
-      s.consentimientos.filter(c => c.empleado === empleadoId && c.vigente)
-        .forEach(c => { c.vigente = false; c.revocado = new Date().toISOString().slice(0, 10); });
-      const reg = { id: nuevoId('CO'), empleado: empleadoId, version, fecha: new Date().toISOString().slice(0, 10), vigente: true, revocado: '' };
-      s.consentimientos.push(reg);
-      bitacora('privacidad.consentimiento_otorgado', reg.id, empleadoId, 'Versión ' + version);
-      return reg;
-    }) : rest('/privacidad/consentimiento', { method: 'POST', body: JSON.stringify({ empleado: empleadoId }) }),
+    listaConsentimientos: () => sb(cliente().from('consentimientos').select('*')).then(listaDesdeDB),
 
-    revocar: (empleadoId) => esDemo() ? demo(s => {
-      const c = s.consentimientos.find(x => x.empleado === empleadoId && x.vigente);
-      if (!c) throw new Error('No hay un consentimiento vigente que revocar.');
-      c.vigente = false; c.revocado = new Date().toISOString().slice(0, 10);
-      bitacora('privacidad.consentimiento_revocado', c.id, empleadoId, '');
-      return c;
-    }) : rest('/privacidad/consentimiento/' + empleadoId, { method: 'DELETE' }),
+    otorgar: (empleadoId) => (async () => {
+      const version = privacidad.avisoSync().version;
+      const vigentes = await sb(cliente().from('consentimientos').select('id').eq('empleado', empleadoId).eq('vigente', true));
+      for (const v of (vigentes || [])) {
+        await sb(cliente().from('consentimientos').update({ vigente: false, revocado: hoy() }).eq('id', v.id));
+      }
+      const reg = { id: nuevoId('CO'), empleado: empleadoId, version, fecha: hoy(), vigente: true };
+      return desdeDB(await sb(cliente().from('consentimientos').insert(haciaDB(reg)).select().single()));
+    })(),
 
-    /* Solicitudes ARCO de una persona (su propia bandeja) */
-    arco: (empleadoId) => esDemo()
-      ? demo(s => s.solicitudesArco.filter(x => x.empleado === empleadoId))
-      : rest('/privacidad/arco?empleado=' + encodeURIComponent(empleadoId)),
+    revocar: (empleadoId) => (async () => {
+      const filas = await sb(cliente().from('consentimientos').select('*').eq('empleado', empleadoId).eq('vigente', true));
+      if (!filas || !filas[0]) throw new Error('No hay un consentimiento vigente que revocar.');
+      return desdeDB(await sb(cliente().from('consentimientos')
+        .update({ vigente: false, revocado: hoy() }).eq('id', filas[0].id).select().single()));
+    })(),
 
-    /* Bandeja completa para el servicio médico / administración */
-    arcoLista: (filtro) => esDemo() ? demo(s => aplicaFiltro(s.solicitudesArco, filtro)) : rest('/privacidad/arco' + qs(filtro)),
+    arco: (empleadoId) => sb(cliente().from('solicitudes_arco').select('*').eq('empleado', empleadoId)).then(listaDesdeDB),
 
-    enviarArco: (datos) => esDemo() ? demo(s => {
-      const r = Object.assign({ id: nuevoId('AR'), fecha: new Date().toISOString().slice(0, 10), estado: 'pendiente', respuesta: '', respondioPor: '', fechaRespuesta: '' }, datos);
-      s.solicitudesArco.push(r);
-      bitacora('privacidad.arco_enviada', r.id, datos.empleado, datos.tipo);
-      return r;
-    }) : rest('/privacidad/arco', { method: 'POST', body: JSON.stringify(datos) }),
+    arcoLista: (filtro) => sb(conFiltro(cliente().from('solicitudes_arco').select('*'), filtro)).then(listaDesdeDB),
 
-    responderArco: (id, respuesta, quien) => esDemo() ? demo(s => {
-      const r = s.solicitudesArco.find(x => x.id === id);
-      if (!r) throw new Error('Solicitud no encontrada.');
-      r.estado = 'respondida'; r.respuesta = respuesta; r.respondioPor = quien;
-      r.fechaRespuesta = new Date().toISOString().slice(0, 10);
-      bitacora('privacidad.arco_respondida', r.id, r.empleado, respuesta);
-      return r;
-    }) : rest('/privacidad/arco/' + id, { method: 'PATCH', body: JSON.stringify({ respuesta, respondioPor: quien }) })
+    enviarArco: (datos) => (async () => desdeDB(await sb(cliente().from('solicitudes_arco')
+      .insert(haciaDB(Object.assign({ id: nuevoId('AR'), fecha: hoy(), estado: 'pendiente' }, datos))).select().single())))(),
+
+    responderArco: (id, respuesta, quien) => sb(cliente().from('solicitudes_arco')
+      .update({ estado: 'respondida', respuesta, respondio_por: quien, fecha_respuesta: hoy() })
+      .eq('id', id).select().single()).then(desdeDB)
   };
 
   /* ============================================================
-     Administración de acceso — nivel (jerarquía, fijo) y perfil
-     (función/módulos, editable desde Administración).
+     Administración de acceso — nivel (fijo) y perfil (editable).
      ============================================================ */
   const MODULOS_ASIGNABLES = ['analisis', 'aptitud', 'indicadores', 'rrhh', 'admin'];
 
   const admin = {
-    perfiles: () => esDemo() ? demo(s => s.perfiles) : rest('/admin/perfiles'),
+    perfiles: () => sb(cliente().from('perfiles').select('*')).then(listaDesdeDB),
 
-    crearPerfil: (nombre, modulos, quien) => esDemo() ? demo(s => {
+    crearPerfil: (nombre, modulos, quien) => (async () => {
       nombre = String(nombre || '').trim();
       if (!nombre) throw new Error('Ponle un nombre al perfil.');
       const id = nuevoId('pf').toLowerCase();
       const p = { id, nombre, modulos: (modulos || []).filter(m => MODULOS_ASIGNABLES.indexOf(m) >= 0), sistema: false };
-      s.perfiles.push(p);
-      bitacora('admin.perfil_creado', id, '', nombre + ' — módulos: ' + p.modulos.join(', '));
-      return p;
-    }) : rest('/admin/perfiles', { method: 'POST', body: JSON.stringify({ nombre, modulos }) }),
+      const fila = await sb(cliente().from('perfiles').insert(haciaDB(p)).select().single());
+      await refrescarCaches();
+      return desdeDB(fila);
+    })(),
 
-    actualizarPerfil: (id, campos, quien) => esDemo() ? demo(s => {
-      const p = s.perfiles.find(x => x.id === id);
-      if (!p) throw new Error('Perfil no encontrado.');
+    actualizarPerfil: (id, campos, quien) => (async () => {
       if (campos.modulos) campos.modulos = campos.modulos.filter(m => MODULOS_ASIGNABLES.indexOf(m) >= 0);
-      Object.assign(p, campos);
-      bitacora('admin.perfil_actualizado', id, '', JSON.stringify(campos));
-      return p;
-    }) : rest('/admin/perfiles/' + id, { method: 'PATCH', body: JSON.stringify(campos) }),
+      const fila = await sb(cliente().from('perfiles').update(haciaDB(campos)).eq('id', id).select().single());
+      await refrescarCaches();
+      return desdeDB(fila);
+    })(),
 
-    eliminarPerfil: (id, quien) => esDemo() ? demo(s => {
-      const p = s.perfiles.find(x => x.id === id);
-      if (!p) throw new Error('Perfil no encontrado.');
-      if (p.sistema) throw new Error('Este perfil lo usan reglas del sistema y no se puede eliminar.');
-      if (s.empleados.some(e => e.perfil === id)) throw new Error('Hay personas con este perfil asignado. Reasígnalas antes de eliminarlo.');
-      s.perfiles = s.perfiles.filter(x => x.id !== id);
-      bitacora('admin.perfil_eliminado', id, '', p.nombre);
+    eliminarPerfil: (id, quien) => (async () => {
+      await sb(cliente().from('perfiles').delete().eq('id', id));
+      await refrescarCaches();
       return true;
-    }) : rest('/admin/perfiles/' + id, { method: 'DELETE' }),
+    })(),
 
-    /* Cambia nivel y/o perfil de una persona. En producción sólo el
-       administrador autenticado puede llamarlo y el servidor debe
-       revalidarlo en cada endpoint, no sólo aquí. */
-    cambiarAcceso: (empleadoId, nivel, perfil, quien) => esDemo() ? demo(s => {
-      const e = s.empleados.find(x => x.id === empleadoId);
-      if (!e) throw new Error('Usuario no encontrado');
-      if (!global.ZX_DEMO.NIVELES[nivel]) throw new Error('Nivel no válido.');
-      if (!s.perfiles.some(p => p.id === perfil)) throw new Error('Perfil no válido.');
-      const antes = e.nivel + ' / ' + e.perfil;
-      e.nivel = nivel; e.perfil = perfil;
-      bitacora('usuario.acceso', empleadoId, empleadoId, antes + ' → ' + nivel + ' / ' + perfil);
-      return e;
-    }) : rest('/admin/usuarios/' + empleadoId + '/acceso', { method: 'PATCH', body: JSON.stringify({ nivel, perfil }) })
+    cambiarAcceso: (empleadoId, nivel, perfil, quien) => sb(cliente().from('empleados').update({ nivel, perfil }).eq('id', empleadoId).select().single()).then(desdeDB),
+
+    /* ---- Jerarquía: a quién reporta cada persona (campo `jefe`) ----
+       Es lo que decide quién aprueba vacaciones/banco de horas y qué
+       equipo ve cada jefe. Sólo Administración lo cambia (RLS). En modo
+       Supabase, la base misma rechaza ciclos y auto-jefaturas (triggers
+       evitar_ciclo_jefe / constraint empleados_jefe_no_self); aquí se
+       valida igual para dar un mensaje claro antes de ir al servidor. */
+    cambiarJefe: (empleadoId, jefeId, quien) => sb(cliente().from('empleados').update({ jefe: jefeId || null }).eq('id', empleadoId).select().single()).then(desdeDB),
+
+    /* Pone a `jefeId` como jefe directo de TODAS las personas de la lista,
+       en una sola operación (todo o nada). */
+    asignarEquipo: (jefeId, empleadoIds, quien) => (async () => {
+      if (!jefeId) throw new Error('Elige a la persona que será el jefe.');
+      if (!empleadoIds || !empleadoIds.length) return 0;
+      const filas = await sb(cliente().from('empleados').update({ jefe: jefeId }).in('id', empleadoIds).select('id'));
+      return (filas || []).length;
+    })()
   };
 
   /* Getter SÍNCRONO de los perfiles vigentes, para que app.js (puede(),
-     requiereSesion()) pueda resolver permisos sin esperar una promesa.
-     Sólo funciona en modo demo (localStorage); al conectar backend real,
-     puede()/requiereSesion() deben volverse asíncronos o trabajar con una
-     copia en caché que se refresque tras el login. */
-  function perfilesSync() { return esDemo() ? cargar().perfiles : []; }
+     requiereSesion()) pueda resolver permisos sin esperar una promesa. */
+  function perfilesSync() { return (leerCache(config.perfilesCacheKey) || []); }
 
   global.ZX_API = {
-    config, login, sesionActual, cerrarSesion, reiniciar, perfilesSync,
+    config, login, sesionActual, cerrarSesion, perfilesSync,
     empleados, vacaciones, medico, citas, rrhh, analisis, auditoria, privacidad, admin
   };
 })(window);

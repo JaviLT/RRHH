@@ -16,7 +16,7 @@
   const { esc, $, $$, toast, fmt, fmtLargo, hoyISO, sumaDias, diffDias, tabla,
           modal, cerrarModal, confirmar, descargarCSV } = window.ZX;
   const API = window.ZX_API;
-  const CAT = window.ZX_DEMO.CAT;
+  const CAT = window.ZX_CAT;
 
   const sesion = ZX.requiereSesion('analisis');
   if (!sesion) return;

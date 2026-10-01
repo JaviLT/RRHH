@@ -1,9 +1,9 @@
 /* ============================================================
    Portal Zubex — Aviso de privacidad, consentimiento y ARCO
    ------------------------------------------------------------
-   Nuevo módulo (aprendido en Medico ZX): en esa aplicación el
-   consentimiento se exige con un disparador de PostgreSQL — aquí, en
-   modo demo, la validación equivalente vive en api.js (medico.guardarCuestionario).
+   En el consentimiento, la regla real es un disparador de PostgreSQL
+   (exigir_consentimiento en historias_clinicas): sin consentimiento vigente la
+   base rechaza guardar la historia clínica.
    Todos los roles pueden entrar aquí (roles:'*' en MODULOS). El panel
    de "quién consintió" y la bandeja ARCO sólo se muestran a medico/admin,
    igual que hace Medico ZX con su rol clínico.
@@ -12,8 +12,8 @@
   'use strict';
   const { esc, $, $$, toast, fmt, fmtLargo, hoyISO, confirmar } = window.ZX;
   const API = window.ZX_API;
-  const CAT = window.ZX_DEMO.CAT;
-  const AVISO = CAT.avisoPrivacidad;
+  const CAT = window.ZX_CAT;
+  const AVISO = API.privacidad.avisoSync();
 
   const sesion = ZX.requiereSesion('privacidad');
   if (!sesion) return;
@@ -95,7 +95,7 @@
       '</div>';
 
     ZX.pie(main, 'La captura o actualización de tu historia clínica en Servicio médico requiere un consentimiento vigente. ' +
-      'Este control es del lado del cliente en modo demo; al conectar backend debe reforzarse en el servidor, como ya se probó en Medico ZX.');
+      'Es un control de la base de datos: sin consentimiento vigente, el servidor rechaza guardar la historia clínica.');
 
     if (!c) {
       const chk = $('#acepto'), btn = $('#otorgar');

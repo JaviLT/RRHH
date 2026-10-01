@@ -94,6 +94,12 @@ textarea{resize:vertical;min-height:70px}
 .sb-item.on{background:var(--zx-soft);color:var(--zx);font-weight:600}
 [data-theme=dark] .sb-item.on{color:var(--zx-ac)}
 .sb-ico{width:20px;text-align:center;flex-shrink:0;font-size:15px}
+/* Vistas del módulo activo: desplegadas justo debajo de él (acordeón) */
+.sb-sub{display:flex;flex-direction:column;gap:1px;margin:2px 0 6px 18px;padding-left:8px;border-left:2px solid var(--bd)}
+.sb-subitem{padding:7px 10px;font-size:12.5px;width:100%;text-align:left}
+.sb-sub .sb-subitem.on{background:var(--c2);color:var(--zx);font-weight:600}
+[data-theme=dark] .sb-sub .sb-subitem.on{color:var(--zx-ac)}
+.sidebar.col .sb-sub{margin-left:0;padding-left:0;border-left:none}
 .sidebar.col .sb-item span:not(.sb-ico){display:none}
 .sb-badge{margin-left:auto;background:var(--dn);color:#fff;border-radius:10px;font-size:10px;padding:1px 6px;font-weight:700}
 .sidebar.col .sb-badge{display:none}
@@ -273,11 +279,6 @@ tbody tr:hover{background:var(--c1)}
 .login-box h1{font-size:23px;font-weight:700;letter-spacing:-.5px}
 .login-box>p{font-size:13px;color:var(--tx2);margin:5px 0 24px}
 .login-err{background:var(--dns);color:var(--dnt);border-radius:9px;padding:10px 13px;font-size:12.5px;margin-bottom:13px}
-.demo-users{margin-top:22px;border-top:1px solid var(--bd);padding-top:16px}
-.demo-users b{font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--tx3)}
-.demo-chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px}
-.demo-chip{background:var(--c);border:1px solid var(--bd);border-radius:8px;padding:6px 10px;font-size:11.5px;color:var(--tx2)}
-.demo-chip:hover{border-color:var(--zx-ac);color:var(--zx)}
 
 /* ---------- Nota metodológica / pie ---------- */
 .nota{background:var(--zx-soft2);border:1px solid var(--bd);border-radius:10px;padding:13px 15px;
@@ -304,3 +305,13 @@ tbody tr:hover{background:var(--c1)}
   .main{overflow:visible;padding:0}
   .card{box-shadow:none;break-inside:avoid}
 }
+
+/* ---- Jefes y equipos (Administración) ---- */
+.eq-grid{display:grid;grid-template-columns:minmax(260px,360px) 1fr;gap:14px;align-items:start}
+.eq-list{display:flex;flex-direction:column;gap:4px;max-height:560px;overflow-y:auto}
+.eq-row{padding:9px 11px;border:1px solid var(--bd);border-radius:9px;cursor:pointer;background:var(--c)}
+.eq-row:hover{background:var(--c2)}
+.eq-row.on{border-color:var(--zx);background:var(--zx-soft)}
+.eq-row b{font-size:12.5px}
+.eq-sub{font-size:11.5px;color:var(--tx2);margin-top:2px}
+@media(max-width:900px){.eq-grid{grid-template-columns:1fr}}

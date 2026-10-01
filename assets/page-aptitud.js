@@ -11,15 +11,14 @@
   'use strict';
   const { esc, $, $$, fmt, fmtLargo, hoyISO, sumaDias, tabla, descargarCSV, toast } = window.ZX;
   const API = window.ZX_API;
-  const CAT = window.ZX_DEMO.CAT;
+  const CAT = window.ZX_CAT;
 
   const sesion = ZX.requiereSesion('aptitud');
   if (!sesion) return;
 
   /* Acceso pleno (planta completa) si el PERFIL lo otorga (medico o
-     vigilancia — incluye a alguien como E1009, "Jefe de Seguridad
-     Industrial": nivel supervisor + perfil vigilancia, que antes del
-     modelo de dos campos no se podía representar). Sin ese perfil, un
+     vigilancia — incluye a alguien que a la vez es Jefe de Seguridad
+     Industrial: nivel supervisor + perfil vigilancia). Sin ese perfil, un
      supervisor sólo ve la restricción operativa de su propio equipo. */
   const accesoPleno = ['medico', 'vigilancia'].indexOf(sesion.perfil) >= 0;
   const soloEquipo = !accesoPleno && sesion.nivel === 'supervisor';

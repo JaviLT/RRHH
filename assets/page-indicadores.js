@@ -10,7 +10,7 @@
   'use strict';
   const { esc, $, $$, fmt, hoyISO, tabla, descargarCSV, toast } = window.ZX;
   const API = window.ZX_API;
-  const CAT = window.ZX_DEMO.CAT;
+  const CAT = window.ZX_CAT;
 
   const sesion = ZX.requiereSesion('indicadores');
   if (!sesion) return;
@@ -197,7 +197,7 @@
      Indicadores del alcance vigente (documento v3). Se calculan con la
      programación, los resultados validados y los casos de seguimiento. */
   function etapa1() {
-    const CATx = window.ZX_DEMO.CAT;
+    const CATx = window.ZX_CAT;
     const a = D.emps.filter(e => e.estatus !== 'baja');
     const n = Math.max(1, a.length);
     const evaluados = new Set(D.progAnalisis.filter(p => p.estado === 'realizado').map(p => p.empleado));

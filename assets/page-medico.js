@@ -8,7 +8,7 @@
   'use strict';
   const { esc, $, $$, toast, chip, fmt, fmtLargo, hoyISO, edad, imc, tabla, modal, cerrarModal, confirmar, descargarCSV, sumaDias } = window.ZX;
   const API = window.ZX_API;
-  const CAT = window.ZX_DEMO.CAT;
+  const CAT = window.ZX_CAT;
 
   const sesion = ZX.requiereSesion('medico');
   if (!sesion) return;
@@ -303,10 +303,10 @@
       cons: 'Atenciones médicas del expediente: motivo, signos vitales, diagnóstico, tratamiento, evolución y referencias.',
       rt: 'Riesgos de trabajo con análisis de causa raíz en 8 disciplinas (8D) y seguimiento hasta la reincorporación.',
       inc: 'Incapacidades y ausentismo médico. Los días se cuentan como días naturales del periodo.',
-      docs: 'En este entorno sólo se registra el metadato del documento. La carga real requiere backend con control de acceso y bitácora.',
+      docs: 'Por ahora sólo se registra el metadato del documento (nombre, tipo y fecha). La carga del archivo aún no está conectada.',
       vig: 'Programa de vigilancia médica, recomendaciones y restricciones laborales vigentes, y casos en seguimiento.',
       vac: 'Esquema de vacunación y participación en campañas preventivas. La próxima dosis se calcula con el esquema del biológico aplicado.',
-      log: 'Trazabilidad de las operaciones sobre este expediente. En producción la escribe el servidor, no el navegador.',
+      log: 'Trazabilidad de las operaciones sobre este expediente. La escribe el servidor, no el navegador.',
       analisis: 'Resultados de los análisis clínicos periódicos (Etapa 1 · SQF) y seguimiento de las desviaciones detectadas.'
     }[tabExp];
   }
@@ -394,8 +394,8 @@
   /* ---------- Tab: Historial de cambios ---------- */
   function tabLog(x) {
     return '<div class="priv">🧾 <div>La bitácora registra <b>quién</b> hizo <b>qué</b> y <b>cuándo</b> sobre este expediente. ' +
-      'En este entorno la escribe el navegador para poder mostrarla; en producción debe escribirla el servidor dentro de la misma ' +
-      'transacción, ser inmutable para los usuarios y conservarse junto con el expediente.</div></div>' +
+      'La escribe el servidor y no puede modificarse desde el portal. Hoy cubre cambios de acceso, consentimiento y solicitudes ' +
+      'ARCO; el resto de las operaciones clínicas se irán sumando.</div></div>' +
       tabla([
         { t: 'Fecha y hora', k: 'fecha' }, { t: 'Usuario', v: l => nombreDe(l.usuario) },
         { t: 'Acción', k: 'accion' }, { t: 'Registro', k: 'entidad' }, { t: 'Detalle', k: 'detalle' }
@@ -676,7 +676,7 @@
       cab('Pacientes', D.emps.length + ' colaboradores con expediente ocupacional') +
       AVISO +
       '<div class="filters"><div class="field" style="min-width:290px"><label>Buscar por nombre, número o departamento</label>' +
-        '<input id="q" value="' + esc(busca) + '" placeholder="Ej. Bruno, E1002, Extrusión"></div></div>' +
+        '<input id="q" value="' + esc(busca) + '" placeholder="Ej. nombre, nómina o área"></div></div>' +
       tabla([
         { t: 'Nº', k: 'id' }, { t: 'Nombre', k: 'nombre' }, { t: 'Departamento', k: 'depto' }, { t: 'Puesto', k: 'puesto' },
         { t: 'Dictamen', html: e => { const ev = D.evaluaciones.filter(x => x.empleado === e.id).sort(desc('fecha'))[0];
@@ -1058,7 +1058,7 @@
     modal({
       titulo: 'Registrar documento o evidencia',
       cuerpo:
-        '<div class="priv">📎 <div>En este entorno sólo se registra el <b>metadato</b>. La carga real del archivo requiere backend con validación de tipo, antivirus, cifrado en reposo y bitácora de acceso.</div></div>' +
+        '<div class="priv">📎 <div>Por ahora sólo se registra el <b>metadato</b>. La carga del archivo (con validación de tipo, antivirus, cifrado y bitácora de acceso) aún no está conectada.</div></div>' +
         '<div class="frow">' +
           selc('tipoDoc', 'Tipo de documento', CAT.tiposDocMedico.map(t => [t, t])) +
           txt('nomDoc', 'Nombre del archivo', '') +

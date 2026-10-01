@@ -6,7 +6,7 @@
   'use strict';
 
   const API = global.ZX_API;
-  const VERSION = '1.7.0';
+  const VERSION = '2.0.0';
 
   /* ---------------- Tipografía de marca ----------------
      El manual de marca pide Poppins con fallback a Segoe UI. Cargarla con un
@@ -43,7 +43,7 @@
     { id: 'medico',     nombre: 'Servicio médico',   ico: '🩺', url: 'medico.html',     roles: '*',
       desc: 'Tu historia clínica, tu expediente ocupacional y el resultado de tus consultas.' },
     /* Perfil-gated: sólo quien tenga un perfil con 'analisis' entre sus
-       módulos (ver PERFILES en data.demo.js). Sin roles fijos aquí — se
+       módulos (tabla perfiles de la base de datos). Sin roles fijos aquí — se
        resuelve en vivo contra el store, por eso Administración puede
        crear perfiles nuevos y dárselo sin tocar este archivo. */
     { id: 'analisis',   nombre: 'Análisis clínicos', ico: '🧪', url: 'analisis.html',
@@ -90,7 +90,7 @@
   /* Módulos visibles en menús y matrices */
   const modulosVisibles = () => MODULOS.filter(moduloActivo);
 
-  const NIVEL_NOMBRE = (nivel) => (global.ZX_DEMO && ZX_DEMO.NIVELES[nivel] ? ZX_DEMO.NIVELES[nivel].nombre : nivel);
+  const NIVEL_NOMBRE = (nivel) => (global.ZX_CAT && ZX_CAT.NIVELES[nivel] ? ZX_CAT.NIVELES[nivel].nombre : nivel);
   const PERFIL_NOMBRE = (perfilId) => {
     const perfiles = (global.ZX_API && global.ZX_API.perfilesSync) ? global.ZX_API.perfilesSync() : [];
     const p = perfiles.find(x => x.id === perfilId);
@@ -110,7 +110,7 @@
      Las dos normas conviven con plazos distintos; la política definitiva la
      fijan Salud Ocupacional y Jurídico. */
   function notaConservacion() {
-    const c = (global.ZX_DEMO && ZX_DEMO.CAT.conservacion) || {};
+    const c = (global.ZX_CAT && ZX_CAT.conservacion) || {};
     return '<div class="priv" style="align-items:flex-start">📚 <div>' +
       '<b>Conservación del expediente — dos normas que conviven.</b><br>' +
       '<b>1) Expediente clínico:</b> ' + esc(c.clinico || '') + '<br>' +
@@ -327,20 +327,22 @@
     const app = document.createElement('div');
     app.className = 'app';
 
+    /* Barra lateral tipo acordeón: las vistas del módulo actual ("Mi saldo",
+       "Mis solicitudes"...) se despliegan JUSTO DEBAJO de ese módulo, no en
+       un bloque aparte al final. Los demás módulos quedan como enlaces. */
     let nav = '';
     modulosVisibles().filter(m => puede(s, m.id)).forEach(m => {
       const on = m.id === activo ? ' on' : '';
       nav += '<a class="sb-item' + on + '" href="' + esc(m.url) + '"><span class="sb-ico">' + m.ico + '</span><span>' + esc(m.nombre) + '</span></a>';
+      if (m.id === activo && navItems && navItems.length) {
+        nav += '<div class="sb-sub">';
+        navItems.forEach((n, i) => {
+          nav += '<button class="sb-item sb-subitem' + (i === 0 ? ' on' : '') + '" data-vista="' + esc(n.id) + '">' +
+                 '<span class="sb-ico">' + n.ico + '</span><span>' + esc(n.nombre) + '</span></button>';
+        });
+        nav += '</div>';
+      }
     });
-
-    let sub = '';
-    if (navItems && navItems.length) {
-      sub = '<div class="sb-sec">En esta sección</div>';
-      navItems.forEach((n, i) => {
-        sub += '<button class="sb-item' + (i === 0 ? ' on' : '') + '" data-vista="' + esc(n.id) + '">' +
-               '<span class="sb-ico">' + n.ico + '</span><span>' + esc(n.nombre) + '</span></button>';
-      });
-    }
 
     app.innerHTML =
       '<header class="topbar">' +
@@ -349,7 +351,7 @@
         '</span></div>' +
         '<div class="tb-right">' +
           '<button class="theme-btn" id="zx-tema" aria-label="Cambiar tema"></button>' +
-          '<div class="tb-user"><b>' + esc(s.nombre) + '</b><span>' + esc(ACCESO_TEXTO(s)) + ' · ' + esc(s.depto) + '</span></div>' +
+          '<div class="tb-user"><b>' + esc(s.nombre) + '</b><span>' + esc(s.depto || '') + '</span></div>' +
           '<div class="tb-avatar">' + esc(iniciales(s.nombre)) + '</div>' +
           '<button class="btn-logout" id="zx-salir">Salir</button>' +
         '</div>' +
@@ -357,7 +359,7 @@
       '<div class="layout">' +
         '<aside class="sidebar" id="zx-sb">' +
           '<div class="sb-top"><button class="sb-toggle" id="zx-tg" aria-label="Colapsar menú">☰</button></div>' +
-          '<nav class="sb-nav"><div class="sb-sec">Portal</div>' + nav + sub + '</nav>' +
+          '<nav class="sb-nav"><div class="sb-sec">Portal</div>' + nav + '</nav>' +
           '<div class="sb-foot">Zubex Industrial · v' + VERSION + '</div>' +
         '</aside>' +
         '<main class="main" id="zx-main"></main>' +
@@ -406,15 +408,15 @@
         '<div style="font-size:34px;margin-bottom:8px">⚠️</div>' +
         '<h1 class="page-t" style="margin-bottom:6px">No se pudo cargar esta sección</h1>' +
         '<p class="page-sub" style="margin-bottom:14px">' + esc((err && err.message) || String(err || 'Error desconocido')) + '</p>' +
-        '<p style="font-size:12.5px;color:var(--tx2);margin-bottom:16px">Si el portal se actualizó recientemente, es probable que ' +
-          'tu navegador conserve datos de demostración de una versión anterior. Restablecerlos suele resolverlo.</p>' +
+        '<p style="font-size:12.5px;color:var(--tx2);margin-bottom:16px">Revisa tu conexión y vuelve a intentarlo. ' +
+          'Si el problema continúa, cierra sesión y entra de nuevo.</p>' +
         '<div class="btn-row" style="justify-content:center">' +
-          '<button class="btn" id="zx-reset">↺ Restablecer datos de demostración</button>' +
-          '<button class="btn gh" id="zx-recargar">Recargar página</button>' +
+          '<button class="btn" id="zx-recargar">Recargar página</button>' +
+          '<button class="btn gh" id="zx-cerrar">Cerrar sesión</button>' +
         '</div></div>';
-    const r = $('#zx-reset'), rc = $('#zx-recargar');
-    if (r) r.addEventListener('click', () => { global.ZX_API.reiniciar(); location.reload(); });
+    const rc = $('#zx-recargar'), cs = $('#zx-cerrar');
     if (rc) rc.addEventListener('click', () => location.reload());
+    if (cs) cs.addEventListener('click', () => { API.cerrarSesion(); location.replace('index.html'); });
   }
 
   /* Envuelve el arranque de cada página.
@@ -428,7 +430,7 @@
       const main = $('#zx-main');
       if (main && main.textContent.indexOf('Cargando') >= 0) {
         fallo(new Error('La carga tardó más de ' + Math.round((ms || 12000) / 1000) +
-          ' segundos y se interrumpió. Puede ser un bloqueo de red o datos de demostración inconsistentes.'));
+          ' segundos y se interrumpió. Puede ser un bloqueo de red o un problema de conexión.'));
       }
     }, ms || 12000);
     Promise.resolve().then(fn)
