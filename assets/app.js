@@ -6,7 +6,7 @@
   'use strict';
 
   const API = global.ZX_API;
-  const VERSION = '2.0.0';
+  const VERSION = '2.1.0';
 
   /* ---------------- Tipografía de marca ----------------
      El manual de marca pide Poppins con fallback a Segoe UI. Cargarla con un
@@ -130,7 +130,12 @@
   const DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 
   const hoyISO = () => new Date().toISOString().slice(0, 10);
-  function parse(iso) { return iso ? new Date(iso + 'T12:00:00') : null; }
+  /* Acepta fecha ('2026-05-22') o fecha-hora con zona ('2026-05-22T19:43:00+00:00',
+     como devuelve la base en columnas timestamptz); esta última se muestra en hora local. */
+  function parse(iso) {
+    if (!iso) return null;
+    return iso.length > 10 ? new Date(iso) : new Date(iso + 'T12:00:00');
+  }
   function fmt(iso) {
     const d = parse(iso); if (!d || isNaN(d)) return '—';
     return d.getDate() + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + d.getFullYear();
@@ -351,7 +356,8 @@
         '</span></div>' +
         '<div class="tb-right">' +
           '<button class="theme-btn" id="zx-tema" aria-label="Cambiar tema"></button>' +
-          '<div class="tb-user"><b>' + esc(s.nombre) + '</b><span>' + esc(s.depto || '') + '</span></div>' +
+          '<div class="tb-user"><b>' + esc(s.nombre) + '</b><span title="' + esc([s.puesto, s.area].filter(Boolean).join(' · ')) + '">' +
+            esc([s.puesto, s.area].filter(Boolean).join(' · ')) + '</span></div>' +
           '<div class="tb-avatar">' + esc(iniciales(s.nombre)) + '</div>' +
           '<button class="btn-logout" id="zx-salir">Salir</button>' +
         '</div>' +

@@ -85,6 +85,20 @@
     return data;
   }
 
+  /* La API de Supabase devuelve como máximo 1,000 filas por consulta y no avisa
+     cuando corta. En las tablas que crecen con el tiempo (solicitudes, bitácora,
+     citas, empleados) se pide por páginas hasta traerlo todo. `fabrica` debe
+     construir la consulta COMPLETA con un orden único y estable (termina en id),
+     porque se vuelve a construir en cada página. */
+  async function sbTodo(fabrica) {
+    const TAM = 1000; let todo = [];
+    for (let desde = 0; ; desde += TAM) {
+      const pagina = await sb(fabrica().range(desde, desde + TAM - 1));
+      todo = todo.concat(pagina || []);
+      if (!pagina || pagina.length < TAM) return todo;
+    }
+  }
+
   function conFiltro(query, filtro) {
     if (!filtro) return query;
     Object.keys(filtro).forEach(k => {
@@ -169,7 +183,7 @@
     }
     const emp = desdeDB(fila);
     const sesion = {
-      id: emp.id, nombre: emp.nombre, correo: emp.correo, depto: emp.depto,
+      id: emp.id, nombre: emp.nombre, correo: emp.correo, depto: emp.depto, area: emp.area,
       puesto: emp.puesto, nivel: emp.nivel, perfil: emp.perfil, inicio: new Date().toISOString()
     };
     sessionStorage.setItem(config.sesionKey, JSON.stringify(sesion));
@@ -179,7 +193,7 @@
 
   /* ---------------- Empleados ---------------- */
   const empleados = {
-    lista: () => sb(cliente().from('empleados').select('*')).then(listaDesdeDB),
+    lista: () => sbTodo(() => cliente().from('empleados').select('*').order('id')).then(listaDesdeDB),
     uno: (id) => sb(cliente().from('empleados').select('*').eq('id', id).maybeSingle()).then(desdeDB),
     equipo: (jefeId) => sb(cliente().from('empleados').select('*').eq('jefe', jefeId)).then(listaDesdeDB),
     actualizar: (id, campos) => sb(cliente().from('empleados').update(haciaDB(campos)).eq('id', id).select().single()).then(desdeDB),
@@ -215,25 +229,29 @@
   };
 
   /* ---------------- Vacaciones y banco de horas ---------------- */
+  /* Vacaciones y banco de horas son dos tablas; las pantallas las mezclan en
+     una sola lista y distinguen cada fila por `tipo` ('vacaciones' | 'banco').
+     Ese campo no existe en la base: se agrega aquí, siempre, al leer. */
+  const conTipo = (tipo) => (x) => Array.isArray(x) ? x.map(f => Object.assign(f, { tipo })) : (x ? Object.assign(x, { tipo }) : x);
   const vacaciones = {
-    solicitudes: (filtro) => sb(conFiltro(cliente().from('solicitudes_vacaciones').select('*'), filtro)).then(listaDesdeDB),
-    banco: (filtro) => sb(conFiltro(cliente().from('solicitudes_banco').select('*'), filtro)).then(listaDesdeDB),
+    solicitudes: (filtro) => sbTodo(() => conFiltro(cliente().from('solicitudes_vacaciones').select('*'), filtro).order('id')).then(listaDesdeDB).then(conTipo('vacaciones')),
+    banco: (filtro) => sbTodo(() => conFiltro(cliente().from('solicitudes_banco').select('*'), filtro).order('id')).then(listaDesdeDB).then(conTipo('banco')),
 
     solicitar: (datos) => sb(cliente().rpc('solicitar_vacaciones', {
       p_empleado: datos.empleado, p_inicio: datos.inicio, p_fin: datos.fin,
       p_dias: datos.dias, p_comentario: datos.comentarioEmpleado || null
-    })).then(desdeDB),
+    })).then(desdeDB).then(conTipo('vacaciones')),
 
     solicitarBanco: (datos) => sb(cliente().rpc('solicitar_banco', {
       p_empleado: datos.empleado, p_fecha: datos.fecha, p_horas: datos.horas,
       p_hora_inicio: datos.horaInicio || null, p_hora_fin: datos.horaFin || null,
       p_comentario: datos.comentarioEmpleado || null
-    })).then(desdeDB),
+    })).then(desdeDB).then(conTipo('banco')),
 
     resolver: (id, tipo, estado, nota) => (async () => {
       await sb(cliente().rpc('resolver_solicitud', { p_id: id, p_tipo: tipo, p_estado: estado, p_nota: nota || '' }));
       const tabla = tipo === 'banco' ? 'solicitudes_banco' : 'solicitudes_vacaciones';
-      return desdeDB(await sb(cliente().from(tabla).select('*').eq('id', id).single()));
+      return conTipo(tipo === 'banco' ? 'banco' : 'vacaciones')(desdeDB(await sb(cliente().from(tabla).select('*').eq('id', id).single())));
     })()
   };
 
@@ -348,7 +366,7 @@
   /* ---------------- Citas ---------------- */
   const citas = {
     agenda: () => sb(cliente().from('agenda_medico_config').select('*').eq('id', true).single()).then(desdeDB),
-    lista: (filtro) => sb(conFiltro(cliente().from('citas').select('*'), filtro)).then(listaDesdeDB),
+    lista: (filtro) => sbTodo(() => conFiltro(cliente().from('citas').select('*'), filtro).order('id')).then(listaDesdeDB),
 
     disponibilidad: (fecha) => (async () => {
       const ag = await citas.agenda();
@@ -484,7 +502,7 @@
 
   /* ---------------- Auditoría / administración ---------------- */
   const auditoria = {
-    lista: (filtro) => sb(conFiltro(cliente().from('bitacora').select('*').order('fecha', { ascending: false }), filtro)).then(listaDesdeDB),
+    lista: (filtro) => sbTodo(() => conFiltro(cliente().from('bitacora').select('*'), filtro).order('fecha', { ascending: false }).order('id')).then(listaDesdeDB),
 
     /* La bitácora la escriben triggers del servidor
        (usuario.acceso/estatus, admin.perfil_*, privacidad.*, y las que

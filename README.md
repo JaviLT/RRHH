@@ -4,7 +4,7 @@ Aplicación web interna de Zubex Industrial: expediente médico ocupacional, **E
 Médico Electrónico ZX** (análisis clínicos bajo lineamiento SQF), citas, vacaciones y banco de horas,
 y gestión documental de RRHH, con permisos distintos por nivel y por perfil.
 
-**Versión 2.0.0 · Equipo RMNC · Septiembre 2026**
+**Versión 2.1.0 · Equipo RMNC · Octubre 2026**
 
 > **Trabaja únicamente con Supabase.** Ya no existe el modo demo ni ningún dato de ejemplo en el
 > código: todo lo que se ve viene de la base de datos real (proyecto `RRHH`). Las pruebas se hacen
@@ -12,6 +12,11 @@ y gestión documental de RRHH, con permisos distintos por nivel y por perfil.
 
 ## Qué hay de nuevo
 
+- **2.1.0** — Barra superior con **puesto y área**. Carga de la **jerarquía de jefes** (336 personas), de 9
+  empleados nuevos y del **historial de solicitudes** (1,124 de vacaciones y 201 de banco de horas, con
+  quién las resolvió y cuándo). Correcciones que sólo se notaban con datos reales: las solicitudes no
+  traían su `tipo` (vacaciones/banco), las fechas-hora salían como "—", los horarios vacíos salían como
+  "null" y la lectura se cortaba en 1,000 filas sin avisar.
 - **2.0.0** — Se eliminó el modo demo por completo (`data.demo.js`, usuarios y contraseñas de
   ejemplo, botones de reinicio y diagnóstico). Las listas fijas de los formularios pasaron a
   `assets/catalogos.js` (sin datos de personas); departamentos, áreas y turnos son catálogos vivos
@@ -292,8 +297,25 @@ fecha de ingreso, días disponibles, banco de horas, departamento, área y puest
   usaron más de lo disponible). **Banco de horas:** coma decimal interpretada; los 2 valores
   negativos se guardaron como horas adeudadas (`horas_deber`), con saldo 0.
 - Los totales de la base se verificaron contra el archivo original (días, horas, conteos por rol).
-- Nadie tiene jefe asignado todavía (el archivo no lo trae): se asigna en *Administración → Jefes
-  y equipos*.
+- Los jefes se cargaron en octubre (ver 4.1b); desde entonces se ajustan en *Administración → Jefes y equipos*.
+
+### 4.1b Jefes, empleados nuevos y solicitudes (octubre 2026)
+
+- **Jefes:** `EMPLEADOS(3).csv` trae la nómina del jefe de cada persona: 336 con jefe, 54 jefes distintos,
+  hasta 5 niveles de cadena, sin ciclos. Quedaron **sin jefe**: 100 (dirección general), 3490, 3725 y 3730
+  (el archivo no lo indica) y **101**, que en el archivo aparece como su propio jefe (la base lo prohíbe);
+  falta definir a quién reporta. Los jefes 2381 y 3702 pasaron a nivel Coordinador porque su puesto lo es y
+  tienen gente a su cargo.
+- **9 empleados nuevos** (204, 2507, 2587, 3402, 3524, 3624, 3634, 3694, 3727), con acceso propio. El archivo
+  sólo trae nombre, correo y jefe: su departamento, área, puesto, ingreso y saldos están vacíos.
+- **Solicitudes:** `SOLICITUDES.csv` y `SOLICITUDES_BANCO_HORAS.csv`, con folios estables (`V-…`, `B-…`).
+  Fechas dd/mm/aaaa convertidas explícitamente; hora de Monterrey (UTC−6). Quién resolvió se resolvió por
+  nombre a su nómina; las aprobadas sin dato de resolución (150) quedaron sin resolutor, y las pendientes
+  tienen como aprobador al jefe actual. **No se tocaron los saldos de días ni de horas**: ya reflejan esas
+  solicitudes. Se omitieron 3 solicitudes de vacaciones de las nóminas 283 y 3718, que no están en la lista.
+- Datos de origen para revisar: 13 solicitudes de banco con horas **negativas o cero** (se cargaron tal
+  cual), 15 solicitudes con más días que los naturales del rango, y 1 horario capturado como "04" (se guardó
+  como 04:00).
 
 ### 4.2 Esquema
 
@@ -405,7 +427,7 @@ Lo que ya hace el sistema:
 |---|---|
 | **Alta** | **Cambio de contraseña por la propia persona.** Todas las cuentas tienen contraseña temporal y el portal aún no ofrece cambiarla (Medico ZX tenía "Mi cuenta"). |
 | **Alta** | **Directorio abierto:** cualquier persona con sesión puede leer la tabla `empleados` completa (saldos de vacaciones y horas, correos, perfiles de todos). Restringir a propio/equipo/perfiles autorizados y dejar una vista mínima (nombre, puesto, departamento). |
-| **Alta** | Asignar jefes (hoy nadie tiene): sin eso nadie puede aprobar vacaciones ni banco de horas. |
+| **Alta** | Definir el jefe de 100, 101, 3490, 3725 y 3730: sin él, sus solicitudes no tienen quién las apruebe (las ve RRHH/Admin). |
 | **Alta** | Registrar en bitácora la apertura de expedientes clínicos: `auditoria.registrar` hoy no hace nada; la función de base `registrar_apertura_expediente` existe pero no está conectada. |
 | Media | RRHH no puede editar el maestro de personal: la política de `empleados` sólo deja actualizar a `admin`. |
 | Media | Bitácora incompleta: faltan triggers de consultas, evaluaciones, RHF-34, análisis, etc. |

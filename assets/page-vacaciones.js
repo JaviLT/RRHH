@@ -26,6 +26,10 @@
 
   let D = { emps: [], sols: [], banco: [], yo: null };
   const nombreDe = id => (D.emps.find(e => e.id === id) || {}).nombre || id;
+  /* Horario de uso del banco de horas: muchas solicitudes no lo traen. */
+  const horario = s => s.horaInicio ? s.horaInicio + '–' + s.horaFin : '';
+  /* Quién resolvió la solicitud y cuándo. */
+  const resuelta = s => s.resueltoPor ? s.resueltoPor + (s.resuelta ? ' · ' + fmt(s.resuelta) : '') : (s.resuelta ? fmt(s.resuelta) : '—');
   const deptoDe  = id => (D.emps.find(e => e.id === id) || {}).depto || '';
 
   async function recargar() {
@@ -71,16 +75,18 @@
         { t: 'Fin', v: s => fmt(s.fin) },
         { t: 'Días', k: 'dias' },
         { t: 'Estado', html: s => chip(s.estado) },
-        { t: 'Resolución', v: s => s.resolucion || '—' }
+        { t: 'Resolución', v: s => s.resolucion || '—' },
+        { t: 'Resuelta', v: resuelta }
       ], mias.sort(byFechaDesc('inicio')), { vacio: 'Aún no has solicitado vacaciones.' }) +
       '<h2 class="sec-t">Mi banco de horas</h2>' +
       tabla([
         { t: 'Folio', k: 'id' },
         { t: 'Fecha de uso', v: s => fmt(s.fecha) },
-        { t: 'Horario', v: s => s.horaInicio + ' – ' + s.horaFin },
+        { t: 'Horario', v: s => horario(s) || '—' },
         { t: 'Horas', v: s => s.horas + ' h' },
         { t: 'Estado', html: s => chip(s.estado) },
-        { t: 'Resolución', v: s => s.resolucion || '—' }
+        { t: 'Resolución', v: s => s.resolucion || '—' },
+        { t: 'Resuelta', v: resuelta }
       ], misB.sort(byFechaDesc('fecha')), { vacio: 'Aún no has usado banco de horas.' });
 
     ZX.pie(main, 'El saldo se reserva al enviar la solicitud y se devuelve automáticamente si el aprobador la rechaza. Los días pendientes sólo se suman cuando Recursos Humanos los activa.');
@@ -100,7 +106,7 @@
       tabla([
         { t: 'Folio', k: 'id' },
         { t: 'Tipo', v: s => s.tipo === 'banco' ? 'Banco de horas' : 'Vacaciones' },
-        { t: 'Fechas', v: s => s.tipo === 'banco' ? fmt(s.fecha) + ' ' + s.horaInicio + '–' + s.horaFin : fmt(s.inicio) + ' → ' + fmt(s.fin) },
+        { t: 'Fechas', v: s => s.tipo === 'banco' ? fmt(s.fecha) + (horario(s) ? ' ' + horario(s) : '') : fmt(s.inicio) + ' → ' + fmt(s.fin) },
         { t: 'Cantidad', v: s => s.tipo === 'banco' ? s.horas + ' h' : s.dias + ' días' },
         { t: 'Aprobador', v: s => nombreDe(s.aprobador) },
         { t: 'Enviada', v: s => fmt(s.creada) },
@@ -124,10 +130,11 @@
       tabla([
         { t: 'Empleado', v: s => nombreDe(s.empleado) },
         { t: 'Tipo', v: s => s.tipo === 'banco' ? 'Banco' : 'Vacaciones' },
-        { t: 'Fechas', v: s => s.tipo === 'banco' ? fmt(s.fecha) + ' ' + s.horaInicio + '–' + s.horaFin : fmt(s.inicio) + ' → ' + fmt(s.fin) },
+        { t: 'Fechas', v: s => s.tipo === 'banco' ? fmt(s.fecha) + (horario(s) ? ' ' + horario(s) : '') : fmt(s.inicio) + ' → ' + fmt(s.fin) },
         { t: 'Cantidad', v: s => s.tipo === 'banco' ? s.horas + ' h' : s.dias + ' días' },
         { t: 'Comentario', v: s => s.comentarioEmpleado || '—' },
         { t: 'Estado', html: s => chip(s.estado) },
+        { t: 'Resuelta', v: s => s.estado === 'pendiente' ? '' : resuelta(s) },
         { t: '', html: s => s.estado !== 'pendiente' ? '' :
             '<div class="btn-row"><button class="btn ok sm" data-ok="' + esc(s.id) + '" data-t="' + esc(s.tipo) + '">Aprobar</button>' +
             '<button class="btn no sm" data-no="' + esc(s.id) + '" data-t="' + esc(s.tipo) + '">Rechazar</button></div>' }
@@ -246,9 +253,13 @@
       { t: 'Colaborador', v: s => nombreDe(s.empleado) },
       { t: 'Departamento', v: s => deptoDe(s.empleado) },
       { t: 'Fecha inicio', v: s => fmt(s.tipo === 'banco' ? s.fecha : s.inicio) },
-      { t: 'Fecha fin', v: s => s.tipo === 'banco' ? s.horaFin : fmt(s.fin) },
+      { t: 'Fecha fin', v: s => s.tipo === 'banco' ? (s.horaFin || '—') : fmt(s.fin) },
       { t: 'Cantidad', v: s => s.tipo === 'banco' ? s.horas + ' h' : s.dias + ' d' },
-      { t: 'Estado', v: s => s.estado }
+      { t: 'Estado', v: s => s.estado },
+      { t: 'Comentario del empleado', v: s => s.comentarioEmpleado || '' },
+      { t: 'Resolución', v: s => s.resolucion || '' },
+      { t: 'Resuelta por', v: s => s.resueltoPor || '' },
+      { t: 'Fecha de resolución', v: s => s.resuelta ? fmt(s.resuelta) : '' }
     ];
 
     main.innerHTML =
@@ -259,7 +270,7 @@
         '<div class="field"><label>Mes</label><select id="h3">' + opts([['', 'Todos']].concat(MESES.map((m, i) => [String(i + 1).padStart(2, '0'), m])), hMes) + '</select></div>' +
         '<div class="field"><label>Departamento</label><select id="h4">' + opts([['', 'Todos']].concat(deptos.map(d => [d, d])), hDepto) + '</select></div>' +
       '</div>' +
-      tabla(cols.slice(0, 7).concat([{ t: 'Estado', html: s => chip(s.estado) }]), f, { vacio: 'Sin registros con esos filtros.' });
+      tabla(cols.slice(0, 7).concat([{ t: 'Estado', html: s => chip(s.estado) }, { t: 'Resuelta', v: resuelta }]), f, { vacio: 'Sin registros con esos filtros.' });
 
     ZX.pie(main, 'Incluye vacaciones y banco de horas en cualquier estado. El CSV se genera con BOM UTF-8 para abrirse correctamente en Excel.');
     $('#h1').addEventListener('change', e => { hTipo = e.target.value; historial(); });
