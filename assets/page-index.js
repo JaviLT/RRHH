@@ -57,79 +57,68 @@
     });
   }
 
-  /* ------------------------- PORTAL ------------------------- */
+  /* ------------------------- PORTAL (inicio) ------------------------- */
   async function portal() {
     const shell = ZX.montarShell('inicio', 'Inicio');
     if (!shell) return;
     const { main, sesion } = shell;
+    ZX.cargando(main);
 
-    const verVacaciones = ZX.puede(sesion, 'vacaciones');
-    const [sols, banco, citas, movs] = await Promise.all([
-      API.vacaciones.solicitudes(), API.vacaciones.banco(),
-      API.citas.lista({ empleado: sesion.id }), API.rrhh.movimientos()
-    ]);
-
-    const yo = await API.empleados.uno(sesion.id);
-    const misPend = sols.concat(banco).filter(x => x.empleado === sesion.id && x.estado === 'pendiente').length;
-    const porAprobar = ZX.esAprobador(sesion)
-      ? sols.concat(banco).filter(x => x.aprobador === sesion.id && x.estado === 'pendiente').length : 0;
-    const proxCita = citas.filter(c => c.estado === 'confirmada' && c.fecha >= hoyISO())
-      .sort((a, b) => a.fecha.localeCompare(b.fecha))[0];
-    const enFirma = ZX.esRRHH(sesion) ? movs.filter(m => m.estado === 'en_firma').length : 0;
-
-    let kpis = '';
-    if (verVacaciones) {
-      kpis += kpi('Días de vacaciones', (yo.dias + (yo.pendActivos ? yo.diasPend : 0)), 'Disponibles hoy') +
-              kpi('Banco de horas', yo.horas + ' h', yo.horasDeber ? yo.horasDeber + ' h por reponer' : 'Sin horas por reponer') +
-              kpi('Mis pendientes', misPend, misPend ? 'Esperando aprobación' : 'Nada en trámite', misPend ? 'wn' : '');
-    }
-    kpis += kpi('Próxima cita', proxCita ? ZX.fmt(proxCita.fecha) : '—', proxCita ? proxCita.hora + ' h · Servicio médico' : 'Sin citas agendadas');
-    if (ZX.esClinico(sesion)) {
-      const [pac, incap] = await Promise.all([API.empleados.lista(), API.medico.incapacidades()]);
-      const hoy = ZX.hoyISO();
-      const citasHoy = (await API.citas.lista()).filter(c => c.fecha === hoy && c.estado === 'confirmada').length;
-      const vigentes = incap.filter(i => i.estado === 'vigente').length;
-      kpis += kpi('Citas de hoy', citasHoy, 'En tu agenda') +
-              kpi('Pacientes', pac.length, 'Con expediente ocupacional') +
-              kpi('Incapacidades vigentes', vigentes, 'Colaboradores ausentes', vigentes ? 'wn' : 'gn');
-    }
-    if (ZX.puede(sesion, 'analisis')) {
-      const [prog, res, casos] = await Promise.all([
-        API.analisis.programacion(), API.analisis.resultados(), API.analisis.casos()
+    try {
+      /* Sólo se piden datos propios: la ficha (nombre, departamento, correo, saldos),
+         las solicitudes y las citas de quien entró. */
+      const [yo, sols, banco, citas] = await Promise.all([
+        API.empleados.uno(sesion.id),
+        API.vacaciones.solicitudes({ empleado: sesion.id }),
+        API.vacaciones.banco({ empleado: sesion.id }),
+        API.citas.lista({ empleado: sesion.id })
       ]);
-      const evaluados = new Set(prog.filter(p => p.estado === 'realizado').map(p => p.empleado)).size;
-      const abiertos = casos.filter(c => c.estatus !== 'alta_cierre' && c.estatus !== 'no_requiere').length;
-      const porValidar = res.filter(r => r.valoracion === 'pendiente_validacion').length;
-      kpis += kpi('Evaluados (Etapa 1)', evaluados, 'Análisis clínicos realizados') +
-              kpi('Casos abiertos', abiertos, 'Desviaciones en seguimiento', abiertos ? 'wn' : 'gn');
-      if (ZX.esClinico(sesion)) {
-        kpis += kpi('Por validar', porValidar, 'Resultados esperando validación', porValidar ? 'wn' : 'gn');
+      const ficha = yo || sesion;
+
+      const pendVac = sols.filter(x => x.estado === 'pendiente').length;
+      const pendBan = banco.filter(x => x.estado === 'pendiente').length;
+      const proxCita = citas.filter(c => c.estado === 'confirmada' && c.fecha >= hoyISO())
+        .sort((a, b) => (a.fecha + a.hora).localeCompare(b.fecha + b.hora))[0];
+
+      let tarjetas = '';
+      if (ZX.puede(sesion, 'vacaciones')) {
+        const disp = ficha.dias + (ficha.pendActivos ? ficha.diasPend : 0);
+        tarjetas +=
+          kpi('Días de vacaciones', disp, 'Disponibles hoy', '', 'vacaciones.html#solicitar-vacaciones') +
+          kpi('Solicitudes pendientes de vacaciones', pendVac, pendVac ? 'Esperando aprobación' : 'Nada en trámite', pendVac ? 'wn' : '', 'vacaciones.html#pendientes-vacaciones') +
+          kpi('Banco de horas', ficha.horas + ' h', ficha.horasDeber ? ficha.horasDeber + ' h por reponer' : 'Disponibles hoy', '', 'vacaciones.html#solicitar-banco') +
+          kpi('Solicitudes pendientes de banco de horas', pendBan, pendBan ? 'Esperando aprobación' : 'Nada en trámite', pendBan ? 'wn' : '', 'vacaciones.html#pendientes-banco');
       }
-    }
-    if (porAprobar) kpis += kpi('Por aprobar', porAprobar, 'Solicitudes de tu equipo', 'wn');
-    if (enFirma) kpis += kpi('RHF-34 en firma', enFirma, 'Movimientos esperando firma', 'wn');
+      tarjetas += kpi('Próxima cita', proxCita ? ZX.fmt(proxCita.fecha) : '—',
+        proxCita ? proxCita.hora + ' h · Servicio médico' : 'Sin citas agendadas');
 
-    const mods = ZX.modulosVisibles().filter(m => m.id !== 'inicio' && ZX.puede(sesion, m.id)).map(m =>
-      '<a class="mod" href="' + esc(m.url) + '">' +
-        '<div class="mod-ico">' + m.ico + '</div><b>' + esc(m.nombre) + '</b>' +
-        '<p>' + esc(m.desc || '') + '</p>' +
-        '<span class="mod-tag">Entrar →</span></a>').join('');
+      const mods = ZX.modulosVisibles().filter(m => m.id !== 'inicio' && ZX.puede(sesion, m.id)).map(m =>
+        '<a class="mod" href="' + esc(m.url) + '">' +
+          '<div class="mod-ico">' + m.ico + '</div><b>' + esc(m.nombre) + '</b>' +
+          '<p>' + esc(m.desc || '') + '</p>' +
+          '<span class="mod-tag">Entrar →</span></a>').join('');
 
-    main.innerHTML =
-      '<div class="page-head"><div>' +
-        '<h1 class="page-t">Hola, ' + esc(sesion.nombre.split(' ')[0]) + '</h1>' +
-        '<div class="page-sub">' + esc(ACCESO_TEXTO(sesion)) + ' · ' + esc(sesion.depto) + ' · ' + esc(fmtLargo(hoyISO())) + '</div>' +
-      '</div></div>' +
-      '<div class="grid g4">' + kpis + '</div>' +
-      '<h2 class="sec-t">Tus secciones</h2>' +
-      '<div class="mod-grid">' + mods + '</div>';
+      const linea = [ficha.departamento, ficha.correo].filter(Boolean).join(' · ');
+      main.innerHTML =
+        '<div class="page-head"><div>' +
+          '<h1 class="page-t">' + esc(sesion.id + ' - ' + ficha.nombre) + '</h1>' +
+          (linea ? '<div class="home-id">' + esc(linea) + '</div>' : '') +
+        '</div></div>' +
+        '<div class="grid g4">' + tarjetas + '</div>' +
+        '<h2 class="sec-t">Tus secciones</h2>' +
+        '<div class="mod-grid">' + mods + '</div>';
 
-    ZX.pie(main, 'Los saldos mostrados provienen del registro de personal y consideran los días pendientes sólo cuando están activados.');
+      ZX.pie(main, 'Los saldos mostrados provienen del registro de personal y consideran los días pendientes sólo cuando están activados.');
+    } catch (e) { console.error('[Portal Zubex]', e); ZX.fallo(e); }
   }
 
-  function kpi(l, v, d, clase) {
-    return '<div class="kpi"><div class="kpi-l">' + esc(l) + '</div>' +
-           '<div class="kpi-v ' + (clase || '') + '">' + esc(v) + '</div>' +
-           '<div class="kpi-d">' + esc(d) + '</div></div>';
+  /* Tarjeta de dato. Con `url` funciona como enlace. */
+  function kpi(l, v, d, clase, url) {
+    const cuerpo = '<div class="kpi-l">' + esc(l) + '</div>' +
+      '<div class="kpi-v ' + (clase || '') + '">' + esc(v) + '</div>' +
+      '<div class="kpi-d">' + esc(d) + '</div>';
+    return url
+      ? '<a class="kpi kpi-link" href="' + esc(url) + '">' + cuerpo + '</a>'
+      : '<div class="kpi">' + cuerpo + '</div>';
   }
 })();

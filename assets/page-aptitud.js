@@ -27,7 +27,7 @@
     ? [{ id: 'restricciones', nombre: 'Restricciones de mi equipo', ico: '⛔' }]
     : [{ id: 'tablero', nombre: 'Aptitud del personal', ico: '🦺' },
        { id: 'restricciones', nombre: 'Restricciones vigentes', ico: '⛔' },
-       { id: 'eventos', nombre: 'Eventos por área', ico: '🏭' }];
+       { id: 'eventos', nombre: 'Eventos por departamento', ico: '🏭' }];
   const shell = ZX.montarShell('aptitud', 'Aptitud laboral y restricciones', vistas);
   const main = shell.main;
 
@@ -49,7 +49,7 @@
       const ev = evals.filter(x => x.empleado === e.id).sort((a, b) => b.fecha.localeCompare(a.fecha))[0];
       const v = vigilancia[emps.indexOf(e)] || {};
       return {
-        id: e.id, nombre: e.nombre, depto: e.depto, area: e.area, turno: e.turno, puesto: e.puesto,
+        id: e.id, nombre: e.nombre, direccion: e.direccion, departamento: e.departamento, turno: e.turno, puesto: e.puesto,
         dictamen: ev ? ev.dictamen : '', fechaDictamen: ev ? ev.fecha : '', vigencia: ev ? ev.vigencia : '',
         restricciones: (ev && ev.restricciones) || v.restricciones || '',
         recomendaciones: v.recomendaciones || '',
@@ -89,13 +89,13 @@
   function tablero() {
     const lista = D.filas.filter(f =>
       (!fDic || f.dictamen === fDic) &&
-      (!q || (f.nombre + ' ' + f.id + ' ' + f.depto + ' ' + (f.area || '')).toLowerCase().indexOf(q.toLowerCase()) >= 0));
+      (!q || (f.nombre + ' ' + f.id + ' ' + f.direccion + ' ' + (f.departamento || '')).toLowerCase().indexOf(q.toLowerCase()) >= 0));
     const conRestr = D.filas.filter(f => f.restricciones && f.restricciones.toLowerCase() !== 'ninguna');
     const vencidos = D.filas.filter(f => f.vigencia && f.vigencia < hoyISO());
     const sinEval = D.filas.filter(f => !f.dictamen);
     const cols = [
       { t: 'Nº', k: 'id' }, { t: 'Colaborador', k: 'nombre' }, { t: 'Puesto', k: 'puesto' },
-      { t: 'Área', k: 'area' }, { t: 'Turno', k: 'turno' },
+      { t: 'Departamento', k: 'departamento' }, { t: 'Turno', k: 'turno' },
       { t: 'Dictamen', v: f => nombreDic(f.dictamen) },
       { t: 'Vigencia', v: f => f.vigencia ? fmt(f.vigencia) : '' },
       { t: 'Restricciones', k: 'restricciones' }
@@ -112,7 +112,7 @@
       '</div>' +
       '<div class="filters" style="margin-top:14px">' +
         '<div class="field" style="min-width:250px"><label>Buscar</label>' +
-          '<input id="q" value="' + esc(q) + '" placeholder="Nombre, número, departamento o área"></div>' +
+          '<input id="q" value="' + esc(q) + '" placeholder="Nombre, número, dirección o departamento"></div>' +
         '<div class="field"><label>Dictamen</label><select id="fd">' +
           [['', 'Todos']].concat(CAT.dictamenes.map(d => [d.c, d.n])).map(p =>
             '<option value="' + esc(p[0]) + '"' + (p[0] === fDic ? ' selected' : '') + '>' + esc(p[1]) + '</option>').join('') +
@@ -147,7 +147,7 @@
         '<div class="card"><div class="card-t"><span>' + esc(f.nombre) + ' · ' + esc(f.puesto) + '</span>' +
           (soloEquipo ? '<span class="chip wa">Con restricción</span>' : chipDic(f.dictamen)) + '</div>' +
         '<div class="frow">' +
-          ro('Área', f.area) + ro('Turno', f.turno) + ro('Departamento', f.depto) +
+          ro('Departamento', f.departamento) + ro('Turno', f.turno) + ro('Dirección', f.direccion) +
           (soloEquipo ? '' : ro('Vigencia del dictamen', f.vigencia ? fmt(f.vigencia) : '—')) +
           ro('Próxima valoración', f.proximaValoracion ? fmt(f.proximaValoracion) : '—') +
         '</div>' +
@@ -160,7 +160,7 @@
           (soloEquipo ? 'Nadie de tu equipo tiene restricciones laborales vigentes.'
                       : 'Ningún colaborador tiene restricciones vigentes.') + '</div></div>');
 
-    ZX.pie(main, 'Las restricciones describen la limitación operativa (qué no debe hacer la persona en su puesto), nunca la condición médica que la origina. Es responsabilidad del jefe de área garantizar que la restricción se respete.');
+    ZX.pie(main, 'Las restricciones describen la limitación operativa (qué no debe hacer la persona en su puesto), nunca la condición médica que la origina. Es responsabilidad del jefe de departamento garantizar que la restricción se respete.');
   }
 
   /* ------------------ EVENTOS POR ÁREA ------------------ */
@@ -169,14 +169,14 @@
     const delAnio = D.riesgos.filter(r => r.fecha.slice(0, 4) === anio);
     const grupos = {};
     D.filas.forEach(f => {
-      const kk = (f.area || '—') + ' · ' + (f.turno || '—');
-      if (!grupos[kk]) grupos[kk] = { etiqueta: kk, area: f.area, turno: f.turno, personas: 0, eventos: 0, restringidos: 0 };
+      const kk = (f.departamento || '—') + ' · ' + (f.turno || '—');
+      if (!grupos[kk]) grupos[kk] = { etiqueta: kk, departamento: f.departamento, turno: f.turno, personas: 0, eventos: 0, restringidos: 0 };
       grupos[kk].personas++;
       if (f.restricciones && f.restricciones.toLowerCase() !== 'ninguna') grupos[kk].restringidos++;
     });
     delAnio.forEach(r => {
       const e = D.emps.find(x => x.id === r.empleado); if (!e) return;
-      const kk = (e.area || '—') + ' · ' + (e.turno || '—');
+      const kk = (e.departamento || '—') + ' · ' + (e.turno || '—');
       if (grupos[kk]) grupos[kk].eventos++;
     });
     const lista = Object.keys(grupos).map(kk => {
@@ -187,7 +187,7 @@
     const max = Math.max(1, ...lista.map(g => g.eventos));
 
     main.innerHTML =
-      cab('Eventos de salud por área y turno', 'Accidentes, incidentes y enfermedades de trabajo · ' + anio) +
+      cab('Eventos de salud por departamento y turno', 'Accidentes, incidentes y enfermedades de trabajo · ' + anio) +
       AVISO +
       '<div class="card"><div class="card-t">Eventos registrados</div>' + lista.map(g =>
         '<div style="display:flex;align-items:center;gap:12px;margin-bottom:9px">' +
@@ -198,14 +198,14 @@
         '</div>').join('') + '</div>' +
       '<h2 class="sec-t">Detalle</h2>' +
       tabla([
-        { t: 'Área', k: 'area' }, { t: 'Turno', k: 'turno' }, { t: 'Colaboradores', k: 'personas' },
+        { t: 'Departamento', k: 'departamento' }, { t: 'Turno', k: 'turno' }, { t: 'Colaboradores', k: 'personas' },
         { t: 'Eventos', k: 'eventos' }, { t: 'Tasa', v: g => g.tasa + '%' },
         { t: 'Con restricción', k: 'restringidos' }
       ], lista, { vacio: 'Sin datos.' }) +
-      '<div class="nota"><b>Grupos pequeños.</b> En áreas o turnos con pocas personas, una tasa puede señalar a un individuo. ' +
+      '<div class="nota"><b>Grupos pequeños.</b> En departamentos o turnos con pocas personas, una tasa puede señalar a un individuo. ' +
       'Conviene fijar un umbral mínimo de colaboradores por grupo antes de difundir este reporte.</div>';
 
-    ZX.pie(main, 'Este corte no incluye la causa clínica de cada evento; para el análisis de causa raíz (8D) coordina con el servicio médico y el responsable del área.');
+    ZX.pie(main, 'Este corte no incluye la causa clínica de cada evento; para el análisis de causa raíz (8D) coordina con el servicio médico y el responsable del departamento.');
   }
 
   /* ---------------------- helpers ---------------------- */

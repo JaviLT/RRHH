@@ -19,7 +19,7 @@
     { id: 'tablero', nombre: 'Indicadores', ico: '📈' },
     { id: 'etapa1', nombre: 'Etapa 1 · Análisis', ico: '🧪' },
     { id: 'motivos', nombre: 'Motivos de consulta', ico: '🩹' },
-    { id: 'tendencias', nombre: 'Área y turno', ico: '🏭' },
+    { id: 'tendencias', nombre: 'Departamento y turno', ico: '🏭' },
     { id: 'ficha', nombre: 'Fichas de cálculo', ico: '🧮' }
   ];
   const shell = ZX.montarShell('indicadores', 'Tablero de salud ocupacional', vistas);
@@ -132,10 +132,10 @@
           detalle: riesgos.length + ' ' + plural(riesgos.length, 'evento', 'eventos') + ' (accidentes, incidentes y enfermedades de trabajo)',
           sentido: 'menor_mejor' },
 
-        { id: 10, concepto: 'Tendencias por área/turno', nombre: 'Tasa de eventos de salud por área y turno',
+        { id: 10, concepto: 'Tendencias por departamento/turno', nombre: 'Tasa de eventos de salud por departamento y turno',
           valor: tendenciaTop().tasa, unidad: '%', num: tendenciaTop().eventos, den: tendenciaTop().personas,
-          formula: 'Eventos de salud en el área/turno ÷ colaboradores del área/turno × 100',
-          fuente: 'Expediente médico · maestro de personal (área y turno) · Seguridad Industrial',
+          formula: 'Eventos de salud en el departamento/turno ÷ colaboradores del departamento/turno × 100',
+          fuente: 'Expediente médico · maestro de personal (departamento y turno) · Seguridad Industrial',
           detalle: 'Mayor tasa: ' + tendenciaTop().etiqueta, sentido: 'menor_mejor' }
       ]
     };
@@ -161,23 +161,23 @@
   function tendencias() {
     const grupos = {};
     D.emps.filter(e => e.estatus !== 'baja').forEach(e => {
-      const key = (e.area || '—') + ' · ' + (e.turno || '—');
-      if (!grupos[key]) grupos[key] = { etiqueta: key, area: e.area, turno: e.turno, personas: 0, eventos: 0, incap: 0, consultas: 0 };
+      const key = (e.departamento || '—') + ' · ' + (e.turno || '—');
+      if (!grupos[key]) grupos[key] = { etiqueta: key, departamento: e.departamento, turno: e.turno, personas: 0, eventos: 0, incap: 0, consultas: 0 };
       grupos[key].personas++;
     });
     delAnio(D.riesgos, 'fecha').forEach(r => {
       const e = D.emps.find(x => x.id === r.empleado); if (!e) return;
-      const key = (e.area || '—') + ' · ' + (e.turno || '—');
+      const key = (e.departamento || '—') + ' · ' + (e.turno || '—');
       if (grupos[key]) grupos[key].eventos++;
     });
     delAnio(D.incapacidades, 'inicio').forEach(i => {
       const e = D.emps.find(x => x.id === i.empleado); if (!e) return;
-      const key = (e.area || '—') + ' · ' + (e.turno || '—');
+      const key = (e.departamento || '—') + ' · ' + (e.turno || '—');
       if (grupos[key]) grupos[key].incap += i.dias || 0;
     });
     delAnio(D.consultas, 'fecha').forEach(c => {
       const e = D.emps.find(x => x.id === c.empleado); if (!e) return;
-      const key = (e.area || '—') + ' · ' + (e.turno || '—');
+      const key = (e.departamento || '—') + ' · ' + (e.turno || '—');
       if (grupos[key]) grupos[key].consultas++;
     });
     return Object.keys(grupos).map(kk => {
@@ -352,19 +352,19 @@
   function vistaTendencias() {
     const lista = tendencias();
     const cols = [
-      { t: 'Área', k: 'area' }, { t: 'Turno', k: 'turno' }, { t: 'Colaboradores', k: 'personas' },
+      { t: 'Departamento', k: 'departamento' }, { t: 'Turno', k: 'turno' }, { t: 'Colaboradores', k: 'personas' },
       { t: 'Eventos de salud', k: 'eventos' }, { t: 'Días de incapacidad', k: 'incap' },
       { t: 'Consultas', k: 'consultas' }, { t: 'Tasa de eventos', v: g => g.tasa + '%' }
     ];
     main.innerHTML =
-      cab('Tendencias por área y turno', 'Ejercicio ' + anio, '<button class="btn gh" id="csv">⬇ CSV</button>') +
+      cab('Tendencias por departamento y turno', 'Ejercicio ' + anio, '<button class="btn gh" id="csv">⬇ CSV</button>') +
       AVISO_AGREGADO + filtroAnio() +
       tabla(cols, lista, { vacio: 'Sin datos para el periodo.' }) +
-      '<div class="nota" style="margin-top:16px"><b>Sobre el tamaño de los grupos.</b> Cuando un área o turno tiene muy pocos ' +
+      '<div class="nota" style="margin-top:16px"><b>Sobre el tamaño de los grupos.</b> Cuando un departamento o turno tiene muy pocos ' +
       'colaboradores, la tasa deja de ser un dato agregado y puede identificar a una persona concreta. Antes de publicar este ' +
       'tablero conviene definir un umbral mínimo de personas por grupo (por ejemplo 5) y ocultar los grupos que no lo alcancen.</div>';
 
-    ZX.pie(main, 'Área y turno se toman del maestro de personal. En el modelo final estos campos vendrán de IBIX, por lo que la calidad del indicador depende de que ese maestro esté actualizado.');
+    ZX.pie(main, 'Departamento y turno se toman del maestro de personal. En el modelo final estos campos vendrán de IBIX, por lo que la calidad del indicador depende de que ese maestro esté actualizado.');
     bindAnio();
     $('#csv').addEventListener('click', () => descargarCSV('Tendencias_Area_Turno_' + anio + '.csv', cols, lista));
   }

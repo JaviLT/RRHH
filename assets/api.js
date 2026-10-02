@@ -22,7 +22,7 @@
        localStorage:
          · sólo la preferencia de tema claro/oscuro (zx_tema, en app.js) */
   const config = {
-    sesionKey: 'zx_portal_sesion',
+    sesionKey: 'zx_portal_sesion_v2',
     perfilesCacheKey: 'zx_portal_perfiles_cache',
     avisoCacheKey: 'zx_portal_aviso_cache'
   };
@@ -30,6 +30,7 @@
   /* Borra los datos ficticios que versiones anteriores (modo demo) dejaron
      guardados en este navegador, para que no quede ninguna copia local. */
   try { localStorage.removeItem('zx_portal_demo_v4'); } catch (e) {}
+  try { sessionStorage.removeItem('zx_portal_sesion'); } catch (e) {}   // sesión de versiones anteriores a la 2.2.0
 
   const nuevoId = (pre) => pre + '-' + Math.random().toString(36).slice(2, 7).toUpperCase();
   const hoy = () => new Date().toISOString().slice(0, 10);
@@ -183,7 +184,7 @@
     }
     const emp = desdeDB(fila);
     const sesion = {
-      id: emp.id, nombre: emp.nombre, correo: emp.correo, depto: emp.depto, area: emp.area,
+      id: emp.id, nombre: emp.nombre, correo: emp.correo, direccion: emp.direccion, departamento: emp.departamento,
       puesto: emp.puesto, nivel: emp.nivel, perfil: emp.perfil, inicio: new Date().toISOString()
     };
     sessionStorage.setItem(config.sesionKey, JSON.stringify(sesion));
@@ -201,12 +202,12 @@
     /* Catálogos vivos de departamento, área y turno. No son una lista fija
        en el código: la importación desde IBIX agrega los valores nuevos. */
     catalogos: async () => {
-      const [d, a, t] = await Promise.all([
+      const [dir, dep, t] = await Promise.all([
+        sb(cliente().from('direcciones').select('nombre').order('nombre')),
         sb(cliente().from('departamentos').select('nombre').order('nombre')),
-        sb(cliente().from('areas').select('nombre').order('nombre')),
         sb(cliente().from('turnos').select('nombre').order('nombre'))
       ]);
-      return { departamentos: d.map(x => x.nombre), areas: a.map(x => x.nombre), turnos: t.map(x => x.nombre) };
+      return { direcciones: dir.map(x => x.nombre), departamentos: dep.map(x => x.nombre), turnos: t.map(x => x.nombre) };
     },
 
     /* Sincronizar desde IBIX no puede hacerse con un
@@ -253,6 +254,38 @@
       const tabla = tipo === 'banco' ? 'solicitudes_banco' : 'solicitudes_vacaciones';
       return conTipo(tipo === 'banco' ? 'banco' : 'vacaciones')(desdeDB(await sb(cliente().from(tabla).select('*').eq('id', id).single())));
     })()
+  };
+
+  /* ---------------- Calendario ---------------- */
+  /* Sólo lee las tablas mínimas calendario_vacaciones / calendario_banco (nombre,
+     departamento y fechas de lo APROBADO). Cualquier persona con sesión puede
+     leerlas; las llenan triggers cuando se aprueba o se cambia una solicitud. */
+  const calendario = {
+    /* Vacaciones aprobadas que tocan el rango [desde, hasta] (fechas ISO) */
+    vacaciones: (desde, hasta) => sbTodo(() => cliente().from('calendario_vacaciones').select('*')
+      .lte('inicio', hasta).gte('fin', desde).order('solicitud_id')).then(listaDesdeDB),
+    /* Banco de horas aprobado para un día */
+    banco: (dia) => sbTodo(() => cliente().from('calendario_banco').select('*').eq('fecha', dia).order('solicitud_id')).then(listaDesdeDB),
+
+    /* Llama a alCambiar() en cuanto algo cambia (conexión en tiempo real). Si esa
+       conexión no se logra o se cae —la red de planta ya bloqueó otros servicios—,
+       se refresca sola cada 30 s. Devuelve la función para dejar de escuchar. */
+    suscribir: (alCambiar) => {
+      const c = cliente(); let sondeo = null, canal = null, cerrado = false;
+      const arrancar = () => { if (!sondeo && !cerrado) sondeo = setInterval(alCambiar, 30000); };
+      const parar = () => { if (sondeo) { clearInterval(sondeo); sondeo = null; } };
+      try {
+        canal = c.channel('calendario-' + Math.random().toString(36).slice(2, 8))
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'calendario_vacaciones' }, () => alCambiar())
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'calendario_banco' }, () => alCambiar())
+          .subscribe((estado) => {
+            if (estado === 'SUBSCRIBED') parar();
+            else if (estado === 'CHANNEL_ERROR' || estado === 'TIMED_OUT' || estado === 'CLOSED') arrancar();
+          });
+      } catch (e) { arrancar(); }
+      setTimeout(() => { if (!canal || canal.state !== 'joined') arrancar(); }, 6000);
+      return () => { cerrado = true; parar(); if (canal) { try { c.removeChannel(canal); } catch (e) {} } };
+    }
   };
 
   /* ---------------- Módulo médico ---------------- */
@@ -619,6 +652,6 @@
 
   global.ZX_API = {
     config, login, sesionActual, cerrarSesion, perfilesSync,
-    empleados, vacaciones, medico, citas, rrhh, analisis, auditoria, privacidad, admin
+    empleados, vacaciones, calendario, medico, citas, rrhh, analisis, auditoria, privacidad, admin
   };
 })(window);

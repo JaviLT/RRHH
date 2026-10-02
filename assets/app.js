@@ -6,7 +6,7 @@
   'use strict';
 
   const API = global.ZX_API;
-  const VERSION = '2.1.0';
+  const VERSION = '2.2.0';
 
   /* ---------------- Tipografía de marca ----------------
      El manual de marca pide Poppins con fallback a Segoe UI. Cargarla con un
@@ -37,19 +37,21 @@
     /* Reactivado. Llevaba meses desactivado (activo: false); si algo se ve
        raro aquí, es lo primero a revisar — no se volvió a probar hasta ahora.
        Universal: todos tienen esto, sin importar nivel ni perfil. */
-    { id: 'vacaciones', nombre: 'Vacaciones',        ico: '🌴', url: 'vacaciones.html', roles: '*',
-      desc: 'Solicita vacaciones y banco de horas, consulta tu saldo y el calendario del equipo.' },
+    { id: 'vacaciones', nombre: 'Vacaciones y horas', ico: '🌴', url: 'vacaciones.html', roles: '*',
+      desc: 'Solicita vacaciones y banco de horas, consulta tu saldo y tus solicitudes.' },
+
+    /* El calendario no es una sección del menú: se abre desde la barra superior.
+       `oculto` lo deja fuera del menú lateral, de "Tus secciones" y de la matriz de permisos. */
+    { id: 'calendario', nombre: 'Calendario',        ico: '📆', url: 'calendario.html', roles: '*', oculto: true },
 
     { id: 'medico',     nombre: 'Servicio médico',   ico: '🩺', url: 'medico.html',     roles: '*',
-      desc: 'Tu historia clínica, tu expediente ocupacional y el resultado de tus consultas.' },
+      desc: 'Tu historia clínica, tu expediente ocupacional y tus citas con el médico de empresa.' },
     /* Perfil-gated: sólo quien tenga un perfil con 'analisis' entre sus
        módulos (tabla perfiles de la base de datos). Sin roles fijos aquí — se
        resuelve en vivo contra el store, por eso Administración puede
        crear perfiles nuevos y dárselo sin tocar este archivo. */
     { id: 'analisis',   nombre: 'Análisis clínicos', ico: '🧪', url: 'analisis.html',
       desc: 'Etapa 1 · SQF: resultados de los análisis anuales, desviaciones y seguimiento médico hasta el alta.' },
-    { id: 'citas',      nombre: 'Citas médicas',     ico: '📅', url: 'citas.html',      roles: '*',
-      desc: 'Revisa la disponibilidad del médico de empresa y agenda tu cita.' },
     /* Aptitud es el único módulo con DOS caminos de acceso: por perfil
        (medico/vigilancia → planta completa) o por nivel (nivelExtra:
        'supervisor' → sólo el equipo propio). Ver puede() y soloEquipo en
@@ -88,7 +90,7 @@
     return !!(p && p.modulos.indexOf(moduloId) >= 0);
   }
   /* Módulos visibles en menús y matrices */
-  const modulosVisibles = () => MODULOS.filter(moduloActivo);
+  const modulosVisibles = () => MODULOS.filter(m => moduloActivo(m) && !m.oculto);
 
   const NIVEL_NOMBRE = (nivel) => (global.ZX_CAT && ZX_CAT.NIVELES[nivel] ? ZX_CAT.NIVELES[nivel].nombre : nivel);
   const PERFIL_NOMBRE = (perfilId) => {
@@ -129,16 +131,24 @@
   const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
   const DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 
-  const hoyISO = () => new Date().toISOString().slice(0, 10);
+  const hoyISO = () => iso(new Date());   // fecha local; toISOString() daba la de UTC
   /* Acepta fecha ('2026-05-22') o fecha-hora con zona ('2026-05-22T19:43:00+00:00',
      como devuelve la base en columnas timestamptz); esta última se muestra en hora local. */
   function parse(iso) {
     if (!iso) return null;
     return iso.length > 10 ? new Date(iso) : new Date(iso + 'T12:00:00');
   }
+  /* Formato único de fecha en todo el portal: 02-OCT-2026 */
+  const MES3 = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'];
+  const dos = n => String(n).padStart(2, '0');
   function fmt(iso) {
     const d = parse(iso); if (!d || isNaN(d)) return '—';
-    return d.getDate() + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + d.getFullYear();
+    return dos(d.getDate()) + '-' + MES3[d.getMonth()] + '-' + d.getFullYear();
+  }
+  /* Fecha y hora (en hora local): 02-OCT-2026 13:43 */
+  function fmtDT(ts) {
+    const d = ts ? new Date(ts) : null; if (!d || isNaN(d)) return '—';
+    return fmt(ts) + ' ' + dos(d.getHours()) + ':' + dos(d.getMinutes());
   }
   function fmtLargo(iso) {
     const d = parse(iso); if (!d || isNaN(d)) return '—';
@@ -163,6 +173,23 @@
   function imc(pesoKg, estaturaCm) {
     if (!pesoKg || !estaturaCm) return null;
     return +(pesoKg / Math.pow(estaturaCm / 100, 2)).toFixed(1);
+  }
+
+  /* ---------------- Enlaces directos (#algo) ----------------
+     La barra superior y las tarjetas del inicio abren formularios con enlaces como
+     vacaciones.html#solicitar-vacaciones. `alHash(manejador)` devuelve una función que la
+     pantalla llama cuando ya pintó su vista inicial; después sigue escuchando los cambios de
+     hash (estando ya en la pantalla). El hash se borra al atenderlo, para que recargar la
+     página no vuelva a abrir el formulario. */
+  function alHash(manejador) {
+    const atender = () => {
+      const h = (location.hash || '').replace(/^#/, '');
+      if (!h) return;
+      try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+      manejador(h);
+    };
+    global.addEventListener('hashchange', atender);
+    return atender;
   }
 
   /* ---------------- Tema ---------------- */
@@ -326,6 +353,22 @@
     return s;
   }
 
+  /* Opciones de la barra superior, en este orden. Las tres primeras abren directamente el
+     formulario (o el calendario). En pantallas angostas se agrupan en un menú desplegable. */
+  const NAV_SUPERIOR = [
+    { id: 'vacaciones', txt: 'Vacaciones',     ico: '🌴', url: 'vacaciones.html#solicitar-vacaciones' },
+    { id: 'banco',      txt: 'Banco de horas', ico: '⏱️', url: 'vacaciones.html#solicitar-banco' },
+    { id: 'cita',       txt: 'Cita médica',    ico: '🩺', url: 'medico.html#cita' },
+    { id: 'calendario', txt: 'Calendario',     ico: '📆', url: 'calendario.html' }
+  ];
+  function navSuperior(activo) {
+    const liga = (n, clase) => '<a class="' + clase + (n.id === activo ? ' on' : '') + '" href="' + esc(n.url) + '">' +
+      '<span class="tb-ico">' + n.ico + '</span><span>' + esc(n.txt) + '</span></a>';
+    return '<nav class="tb-nav" aria-label="Accesos rápidos">' + NAV_SUPERIOR.map(n => liga(n, 'tb-op')).join('') + '</nav>' +
+      '<details class="tb-more"><summary aria-label="Accesos rápidos">☰ Solicitar</summary>' +
+        '<div class="tb-menu">' + NAV_SUPERIOR.map(n => liga(n, 'tb-op')).join('') + '</div></details>';
+  }
+
   function montarShell(activo, subtitulo, navItems) {
     const s = API.sesionActual();
     if (!s) return null;
@@ -354,10 +397,11 @@
         '<div class="zx-logo"><span class="zx-mark">ZX</span><span>Portal Zubex' +
           (subtitulo ? '<span class="tb-title" style="display:block">' + esc(subtitulo) + '</span>' : '') +
         '</span></div>' +
+        navSuperior(activo) +
         '<div class="tb-right">' +
           '<button class="theme-btn" id="zx-tema" aria-label="Cambiar tema"></button>' +
-          '<div class="tb-user"><b>' + esc(s.nombre) + '</b><span title="' + esc([s.puesto, s.area].filter(Boolean).join(' · ')) + '">' +
-            esc([s.puesto, s.area].filter(Boolean).join(' · ')) + '</span></div>' +
+          '<div class="tb-user"><b>' + esc(s.nombre) + '</b><span title="' + esc([s.puesto, s.departamento].filter(Boolean).join(' · ')) + '">' +
+            esc([s.puesto, s.departamento].filter(Boolean).join(' · ')) + '</span></div>' +
           '<div class="tb-avatar">' + esc(iniciales(s.nombre)) + '</div>' +
           '<button class="btn-logout" id="zx-salir">Salir</button>' +
         '</div>' +
@@ -380,16 +424,17 @@
   }
 
   function bindVistas(onCambio) {
-    $$('.sb-item[data-vista]').forEach(b => b.addEventListener('click', () => {
-      $$('.sb-item[data-vista]').forEach(x => x.classList.remove('on'));
-      b.classList.add('on');
+    const ir = (id) => {
+      $$('.sb-item[data-vista]').forEach(x => x.classList.toggle('on', x.dataset.vista === id));
       /* Si una vista falla, se muestra el error en lugar de dejar la
          pantalla en blanco o en "Cargando…" indefinidamente. */
       try {
-        const r = onCambio(b.dataset.vista);
+        const r = onCambio(id);
         if (r && typeof r.catch === 'function') r.catch(e => { console.error('[Portal Zubex]', e); fallo(e); });
       } catch (e) { console.error('[Portal Zubex]', e); fallo(e); }
-    }));
+    };
+    $$('.sb-item[data-vista]').forEach(b => b.addEventListener('click', () => ir(b.dataset.vista)));
+    return { ir };      // permite cambiar de vista por código (enlaces directos)
   }
 
   function pie(main, nota) {
@@ -514,7 +559,7 @@
     VERSION, MODULOS, modulosVisibles, puede, NIVEL_NOMBRE, PERFIL_NOMBRE, ACCESO_TEXTO,
     esAprobador, esClinico, esRRHH, esVigilancia, esAdmin, notaConservacion,
     esc, $, $$, MESES, DIAS,
-    hoyISO, parse, fmt, fmtLargo, iso, sumaDias, diffDias, antiguedad, edad, iniciales, imc,
+    hoyISO, parse, fmt, fmtDT, fmtLargo, MES3, iso, sumaDias, diffDias, antiguedad, edad, iniciales, imc, alHash,
     alternarTema, toast, modal, cerrarModal, confirmar, calendario,
     chip, requiereSesion, montarShell, bindVistas, pie, cargando, fallo, arranque, tabla, descargarCSV, leerCSV
   };

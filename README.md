@@ -4,7 +4,7 @@ Aplicación web interna de Zubex Industrial: expediente médico ocupacional, **E
 Médico Electrónico ZX** (análisis clínicos bajo lineamiento SQF), citas, vacaciones y banco de horas,
 y gestión documental de RRHH, con permisos distintos por nivel y por perfil.
 
-**Versión 2.1.0 · Equipo RMNC · Octubre 2026**
+**Versión 2.2.0 · Equipo RMNC · Octubre 2026**
 
 > **Trabaja únicamente con Supabase.** Ya no existe el modo demo ni ningún dato de ejemplo en el
 > código: todo lo que se ve viene de la base de datos real (proyecto `RRHH`). Las pruebas se hacen
@@ -12,6 +12,14 @@ y gestión documental de RRHH, con permisos distintos por nivel y por perfil.
 
 ## Qué hay de nuevo
 
+- **2.2.0** — **Calendario** (pantalla aparte, sólo con sesión): vacaciones por semana con barras continuas y banco de
+  horas por día, que se actualizan al instante cuando se aprueba una solicitud. **Barra superior** con cuatro accesos
+  (Vacaciones, Banco de horas, Cita médica, Calendario). **Citas** pasó a *Servicio médico* y se agenda en un popup con
+  la hora en lista desplegable. **Vacaciones y horas:** periodos (año aniversario / año natural), botón **Detalles**,
+  historial separado por tipo (sólo jefes, RRHH y Admin), medios días, banco en medias horas con máximo de 4 h y
+  formularios con el saldo en grande. **Folios** `V-2859-001` / `B-2859-001`. **Fechas** como `02-OCT-2026`.
+  **Dirección / Departamento:** lo que se llamaba *departamento* (DIR. ADMVO.) ahora es **Dirección**, y lo que se
+  llamaba *área* (IMPRESIÓN) ahora es **Departamento**, en la base y en todas las pantallas.
 - **2.1.0** — Barra superior con **puesto y área**. Carga de la **jerarquía de jefes** (336 personas), de 9
   empleados nuevos y del **historial de solicitudes** (1,124 de vacaciones y 201 de banco de horas, con
   quién las resolvió y cuándo). Correcciones que sólo se notaban con datos reales: las solicitudes no
@@ -55,7 +63,7 @@ borra además los datos ficticios que versiones anteriores pudieron dejar en ese
 ├── index.html            Acceso + portal de inicio
 ├── vacaciones.html       Vacaciones y banco de horas
 ├── medico.html           Servicio médico (mi historia; expedientes, sólo Salud Ocupacional)
-├── citas.html            Citas con el médico de empresa
+├── calendario.html       Calendario: quién está fuera (vacaciones por semana, banco de horas por día)
 ├── analisis.html         Análisis clínicos (Etapa 1 · SQF)
 ├── aptitud.html          Aptitud y restricciones
 ├── indicadores.html      Tablero de indicadores
@@ -78,7 +86,7 @@ borra además los datos ficticios que versiones anteriores pudieron dejar en ese
 ## 3. Módulos y permisos
 
 Universales (los tiene cualquiera, sin importar nivel ni perfil): Vacaciones y banco de horas,
-Servicio médico (mi historia), Citas médicas (mis citas), Aviso de privacidad.
+Servicio médico (mi historia y mis citas), Aviso de privacidad.
 
 El resto se reparte en dos ejes independientes — ver la nota de la introducción:
 
@@ -89,7 +97,7 @@ El resto se reparte en dos ejes independientes — ver la nota de la introducci�
 | Análisis clínicos — resultado y valoración médica | — | — | — | ✅ | — | — | — | — |
 | Análisis clínicos — estatus e indicadores de gestión | — | — | — | ✅ | — | — | ✅ | ✅ |
 | Médico — expedientes clínicos de terceros | — | — | — | ✅ | — | — | — | — |
-| Citas — agenda del médico | — | — | — | ✅ | — | — | — | — |
+| Servicio médico — agenda del médico | — | — | — | ✅ | — | — | — | — |
 | RRHH — RHF-34, maestro, expediente documental | — | — | — | — | — | ✅ | — | — |
 | Indicadores (datos agregados) | — | — | — | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Administración — usuarios, perfiles, bitácora | — | — | — | — | — | — | — | ✅ |
@@ -135,7 +143,7 @@ Programación → Resultado → Validación médica → ¿Normal o desviación?
   Alta/cierre, más No requiere seguimiento. Cada caso guarda fecha de detección, motivo, valoración
   médica, fecha de cita, indicaciones, estudios posteriores, próxima valoración, restricción
   derivada, fecha de alta y bitácora de notas.
-- **Reporte de gestión.** Cobertura y casos por área, casos por estatus y días promedio de la
+- **Reporte de gestión.** Cobertura y casos por departamento, casos por estatus y días promedio de la
   detección al alta. Agregado, exportable e imprimible.
 
 **Quién ve qué, dentro del mismo módulo:** Salud Ocupacional ve el resultado y la valoración
@@ -186,7 +194,7 @@ captura y deja el expediente en resguardo.
 
 Vista construida para el perfil de Vigilancia de la propuesta. Muestra dictamen de aptitud,
 vigencia, restricciones, recomendaciones y próxima valoración — y **nada más**: no expone
-diagnóstico, tratamiento ni antecedentes. Incluye el corte de eventos de salud por área y turno.
+diagnóstico, tratamiento ni antecedentes. Incluye el corte de eventos de salud por departamento y turno.
 
 ### 3.6 Indicadores (Entregable 2 + Etapa 1)
 
@@ -202,12 +210,12 @@ Los diez indicadores de la matriz de la propuesta, cada uno con su nombre formal
 numerador y denominador que la alimentan y su fuente de datos: tasa de atención médica,
 distribución de motivos de consulta, tasa de incidencia de accidentes, índice de días de
 incapacidad, porcentaje de casos en seguimiento, cumplimiento de evaluaciones, cumplimiento de
-exámenes periódicos, restricciones vigentes, índice de frecuencia de eventos y tasa por área/turno.
+exámenes periódicos, restricciones vigentes, índice de frecuencia de eventos y tasa por departamento/turno.
 Todo es información **agregada**: el tablero no muestra ningún dato clínico individual.
 
 Dos advertencias metodológicas que la propia app señala: los indicadores de cumplimiento sólo
 existen si el **programa de exámenes** está cargado (sin evaluaciones programadas no hay
-denominador), y las tasas por área/turno pueden identificar a una persona cuando el grupo es muy
+denominador), y las tasas por departamento/turno pueden identificar a una persona cuando el grupo es muy
 pequeño, por lo que conviene fijar un umbral mínimo antes de difundir el reporte.
 
 ### 3.7 Administración del sistema
@@ -221,10 +229,32 @@ eliminarlo (bloqueado si es de sistema o si alguien lo tiene asignado — hay qu
 campo); y **Bitácora de auditoría**, filtrable por acción y usuario, con conteo de aperturas de
 expediente clínico.
 
-### 3.3 Citas
-Calendario con días hábiles del servicio médico → horarios libres calculados contra las citas ya
-confirmadas y los bloqueos → confirmación con motivo. El médico ve su agenda del día, los próximos
-7 días y el % de ocupación.
+### 3.3 Citas (dentro de Servicio médico)
+- **Mis citas** (todos): tabla con folio, fecha, hora, motivo y estado, con cancelación. **Agendar cita** abre un popup con
+  el mismo calendario de los demás formularios (lunes a viernes; los días sin servicio aparecen deshabilitados), la **hora
+  en una lista desplegable con sólo los horarios libres** y el motivo. Una persona sólo puede tener una cita confirmada por día.
+- **Agenda del médico** (perfil Médico): citas del día, próximos 7 días y ocupación, con acceso directo al expediente.
+- Se abre también con el botón **Cita médica** de la barra superior (`medico.html#cita`).
+
+### 3.9 Vacaciones y horas · Calendario · barra superior
+- **Barra superior:** *Vacaciones · Banco de horas · Cita médica · Calendario*. Las tres primeras abren directamente el
+  formulario (enlaces `vacaciones.html#solicitar-vacaciones`, `#solicitar-banco`, `medico.html#cita`); en pantallas angostas
+  se agrupan en un menú. Las tarjetas del inicio usan los mismos enlaces (y `#pendientes-vacaciones` / `#pendientes-banco`).
+- **Mi saldo:** *Mis vacaciones* se ve por **año aniversario** (del aniversario de ingreso al día anterior al siguiente) y
+  *Mi banco de horas* por **año natural**. Una solicitud aparece en el periodo en que se **creó**; si su fecha cae en uno
+  posterior, aparece también ahí con la etiqueta *Periodo anterior* / *Año anterior*. Sin fecha de ingreso se muestran todas.
+  El botón **Detalles** abre toda la información de la solicitud, incluido el saldo que quedó después de crearla (en las
+  cargadas del sistema anterior no existe y se muestra "—").
+- **Formulario de vacaciones:** días **manuales** (admite 0.5); no pueden exceder los días disponibles ni los días naturales del rango.
+- **Formulario de banco de horas:** *Desde* (00:00–23:30) y *Hasta* (las siguientes 4 h, en medias horas; puede cruzar la
+  medianoche). Máximo **4 h por solicitud y por día** (pendientes y aprobadas), sin horarios encimados. Todo se valida también
+  en la base de datos.
+- **Historial** (jefes, RRHH y Admin): vacaciones o banco de horas (filtro de tipo), con botón Detalles y CSV. Un jefe ve a su
+  gente directa; RRHH y Admin ven a todos.
+- **Calendario** (`calendario.html`, sólo con sesión): pestañas *Vacaciones* (semana, una fila por persona, días seguidos en una
+  sola barra) y *Banco de horas* (un día, ordenado por hora de inicio). Lee las tablas mínimas `calendario_vacaciones` y
+  `calendario_banco` (sólo lo aprobado, sin comentarios) y se actualiza por Realtime; si esa conexión no se logra, se refresca
+  cada 30 s. Cualquier persona con sesión ve las vacaciones y el banco de horas aprobados de todos.
 
 ### 3.4 RRHH — RHF-34
 Réplica digital del formato **RHF-34 rev. 00 "Movimiento de Personal"**: datos generales, los cinco
@@ -239,7 +269,7 @@ impresión y expediente documental por colaborador con control de vigencias.
 
 **Maestro de colaboradores → Importar desde IBIX.** Sube un CSV (botón *⬆ Importar desde IBIX*) y
 reconoce columnas por alias — "No. Empleado", "Nómina", "Núm. Empleado" y variantes con o sin
-puntuación/acentos mapean todas al mismo campo `id`; igual para nombre, correo, depto, área, turno,
+puntuación/acentos mapean todas al mismo campo `id`; igual para nombre, correo, dirección, departamento, turno,
 puesto, jefe directo, fecha de ingreso y estatus. Antes de aplicar nada muestra qué columnas
 reconoció, cuáles va a ignorar, y una muestra de las primeras filas mapeadas. Al confirmar:
 - Actualiza a quien ya existe (upsert por número de nómina) — sólo los campos que trae el CSV.
@@ -283,7 +313,7 @@ Supabase inyecta sola.
 ### 4.1 Carga inicial de personal (septiembre 2026)
 
 Se cargaron **333 personas** desde `EMPLEADOS.csv` (exportación con nómina, nombre, correo, rol,
-fecha de ingreso, días disponibles, banco de horas, departamento, área y puesto):
+fecha de ingreso, días disponibles, banco de horas, dirección, departamento y puesto):
 
 - Pasó por la Edge Function `sincronizar-ibix` (creación oficial de usuarios), con contraseñas
   temporales aleatorias.
@@ -307,7 +337,7 @@ fecha de ingreso, días disponibles, banco de horas, departamento, área y puest
   falta definir a quién reporta. Los jefes 2381 y 3702 pasaron a nivel Coordinador porque su puesto lo es y
   tienen gente a su cargo.
 - **9 empleados nuevos** (204, 2507, 2587, 3402, 3524, 3624, 3634, 3694, 3727), con acceso propio. El archivo
-  sólo trae nombre, correo y jefe: su departamento, área, puesto, ingreso y saldos están vacíos.
+  sólo trae nombre, correo y jefe: su dirección, departamento, puesto, ingreso y saldos están vacíos.
 - **Solicitudes:** `SOLICITUDES.csv` y `SOLICITUDES_BANCO_HORAS.csv`, con folios estables (`V-…`, `B-…`).
   Fechas dd/mm/aaaa convertidas explícitamente; hora de Monterrey (UTC−6). Quién resolvió se resolvió por
   nombre a su nómina; las aprobadas sin dato de resolución (150) quedaron sin resolutor, y las pendientes
@@ -323,7 +353,7 @@ fecha de ingreso, días disponibles, banco de horas, departamento, área y puest
 solicitudes de vacaciones/banco, historias clínicas, consultas, citas, RHF-34, expedientes,
 evaluaciones, riesgos, incapacidades, documentos médicos, vigilancia, programa de evaluaciones,
 vacunas, campañas, análisis clínicos (programación/resultados/casos), consentimientos, ARCO,
-bitácora, y catálogos de departamento/área/turno/aviso de privacidad). `empleados.nivel` y
+bitácora, y catálogos de dirección/departamento/turno/aviso de privacidad). `empleados.nivel` y
 `empleados.perfil` son exactamente el mismo modelo de dos ejes que ya tenía el frontend — `perfil`
 referencia la tabla `perfiles`, editable desde Administración.
 
@@ -369,7 +399,7 @@ colaboradores → Importar desde IBIX*) ya no escribe directo a la tabla: llama 
 - Da de alta a quien no existe (usuario de Auth + fila de `empleados`, `nivel: empleado` /
   `perfil: ninguno`, contraseña temporal) y actualiza a quien ya existe — sin tocar nunca
   `nivel`/`perfil` de nadie.
-- Registra automáticamente en el catálogo cualquier departamento/área/turno que IBIX traiga y aún no
+- Registra automáticamente en el catálogo cualquier dirección/departamento/turno que IBIX traiga y aún no
   exista — IBIX manda sobre el catálogo, el catálogo no debe bloquear una alta legítima.
 - Suspende (nunca elimina) a quien deje de aparecer en el archivo.
 
@@ -392,6 +422,26 @@ cambiar el jefe, las solicitudes pendientes de vacaciones/banco pasan al jefe nu
 auditan como `usuario.jefe`. **Ojo con IBIX:** si algún día el archivo de IBIX trae una columna de
 jefe, la importación la usará y pisará lo asignado a mano; mientras el archivo no la traiga, las
 asignaciones manuales se respetan.
+
+### 4.6b Migraciones de la 2.2.0 (29–31)
+- **29 · Renombrado:** `empleados.depto` → `direccion` y `empleados.area` → `departamento`; catálogos `departamentos` → `direcciones`
+  y `areas` → `departamentos`; `movimientos_rhf34.depto` → `departamento`; `alta_persona` con parámetros nuevos. `riesgos_trabajo.area`
+  **no** se renombra: es el lugar del accidente ("Área involucrada").
+- **30 · Solicitudes:** folios `V-<nómina>-<consecutivo>` (por persona y tipo, con candado), columna `saldo_despues`, y validaciones en
+  `solicitar_vacaciones` / `solicitar_banco` (positivos, medios días, rango, 4 h, tope diario, sin traslapes, horas = Desde–Hasta).
+- **31 · Calendario:** tablas `calendario_vacaciones` y `calendario_banco`, llenadas por triggers, con RLS de sólo lectura para
+  personas con acceso activo y publicadas en Realtime.
+- **Compatibilidad temporal** con el sitio 2.1.0 mientras se sube la versión nueva: columnas generadas `empleados.depto` y
+  `empleados.area` y la vista `areas`. **Retirar** cuando la 2.2.0 esté publicada:
+  ```sql
+  drop view if exists areas;
+  alter table empleados drop column if exists depto;
+  alter table empleados drop column if exists area;
+  ```
+- La Edge Function `sincronizar-ibix` (v4) acepta `direccion` / `departamento` y, por compatibilidad, `depto` / `area`.
+- **Importador de RRHH:** detecta el formato de columnas. Con «Dirección» en el archivo, «Departamento» es el departamento; con
+  «Departamento» y «Area» (formato anterior de IBIX), «Departamento» se carga como Dirección y «Area» como Departamento. La vista
+  previa dice qué formato detectó; con una sola columna «Departamento» avisa para que se revise.
 
 ### 4.7 Pendientes
 
@@ -425,6 +475,9 @@ Lo que ya hace el sistema:
 
 | Prioridad | Punto |
 |---|---|
+| **Alta** | Retirar la compatibilidad temporal (4.6b) cuando la 2.2.0 esté publicada. |
+| **Alta** | El importador envía la fecha de ingreso tal como viene en el archivo: un formato dd/mm podría leerse como mm/dd sin avisar. Convertir y validar al importar. |
+| Media | Asignar el médico en `agenda_medico_config` (hoy el popup de citas no muestra su nombre). |
 | **Alta** | **Cambio de contraseña por la propia persona.** Todas las cuentas tienen contraseña temporal y el portal aún no ofrece cambiarla (Medico ZX tenía "Mi cuenta"). |
 | **Alta** | **Directorio abierto:** cualquier persona con sesión puede leer la tabla `empleados` completa (saldos de vacaciones y horas, correos, perfiles de todos). Restringir a propio/equipo/perfiles autorizados y dejar una vista mínima (nombre, puesto, departamento). |
 | **Alta** | Definir el jefe de 100, 101, 3490, 3725 y 3730: sin él, sus solicitudes no tienen quién las apruebe (las ve RRHH/Admin). |
@@ -434,7 +487,7 @@ Lo que ya hace el sistema:
 | Media | `agenda_medico_config.medico` está en blanco; el médico es la cuenta 9999. |
 | Media | Indicadores y Aptitud tardan ~7 s en abrir con 333 personas; la pantalla de espera falla a los 12 s. |
 | Media | Textos legales del aviso de privacidad (domicilio, responsable art. 29, contacto) y política de conservación. |
-| Media | Umbral mínimo de personas por grupo en reportes por área/turno. |
+| Media | Umbral mínimo de personas por grupo en reportes por departamento/turno. |
 | Media | Firma del RHF-34: no valida que quien firma sea la persona de esa etapa; falta e.firma. |
 | Media | Carga de archivos (PDF de laboratorio, adjuntos): no hay Storage conectado. |
 | Baja | Folio de RHF-34 por conteo (usar una secuencia); notificaciones por correo. |

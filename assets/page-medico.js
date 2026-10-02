@@ -6,7 +6,7 @@
    ============================================================ */
 (function () {
   'use strict';
-  const { esc, $, $$, toast, chip, fmt, fmtLargo, hoyISO, edad, imc, tabla, modal, cerrarModal, confirmar, descargarCSV, sumaDias } = window.ZX;
+  const { esc, $, $$, toast, chip, fmt, fmtDT, fmtLargo, hoyISO, parse, edad, imc, tabla, modal, cerrarModal, confirmar, calendario, descargarCSV, sumaDias } = window.ZX;
   const API = window.ZX_API;
   const CAT = window.ZX_CAT;
 
@@ -16,42 +16,48 @@
 
   const vistas = soyMedico
     ? [{ id: 'pacientes',  nombre: 'Pacientes',            ico: '👥' },
+       { id: 'agenda',     nombre: 'Agenda del médico',    ico: '🗓️' },
        { id: 'programa',   nombre: 'Programa de exámenes', ico: '🗓️' },
        { id: 'riesgos',    nombre: 'Riesgos de trabajo',   ico: '⚠️' },
        { id: 'ausentismo', nombre: 'Ausentismo',           ico: '📉' },
        { id: 'vigilancias',nombre: 'Vigilancia',           ico: '🔬' },
        { id: 'campanas',   nombre: 'Campañas y vacunación',ico: '💉' },
        { id: 'altas',      nombre: 'Alta y baja de expedientes', ico: '🗃️' },
-       { id: 'ficha',      nombre: 'Mi historia clínica',  ico: '📝' }]
+       { id: 'ficha',      nombre: 'Mi historia clínica',  ico: '📝' },
+       { id: 'citas',      nombre: 'Mis citas',            ico: '📅' }]
     : [{ id: 'ficha',      nombre: 'Mi historia clínica',  ico: '📝' },
-       { id: 'expediente', nombre: 'Mi expediente',        ico: '📁' }];
+       { id: 'expediente', nombre: 'Mi expediente',        ico: '📁' },
+       { id: 'citas',      nombre: 'Mis citas',            ico: '📅' }];
 
   const shell = ZX.montarShell('medico', 'Servicio médico · expediente ocupacional', vistas);
   const main = shell.main;
 
-  let D = { emps: [], consultas: [], mio: null, evaluaciones: [], riesgos: [], incapacidades: [], docs: [], vigilancia: [] };
+  let D = { emps: [], citas: [], agenda: null, consultas: [], mio: null, evaluaciones: [], riesgos: [], incapacidades: [], docs: [], vigilancia: [] };
   const empDe = id => D.emps.find(e => e.id === id) || {};
   const nombreDe = id => empDe(id).nombre || id || '—';
 
   async function recargar() {
-    const [emps, consultas, mio, evaluaciones, riesgos, incapacidades, docs, programa, vacunas, campanas, expedientes, consentimiento] = await Promise.all([
+    const [emps, consultas, mio, evaluaciones, riesgos, incapacidades, docs, programa, vacunas, campanas, expedientes, consentimiento, citas, agenda] = await Promise.all([
       API.empleados.lista(), API.medico.consultas(), API.medico.cuestionario(sesion.id),
       API.medico.evaluaciones(), API.medico.riesgos(), API.medico.incapacidades(), API.medico.documentos(''),
       API.medico.programa(), API.medico.vacunas(), API.medico.campanas(), API.medico.expedientes(),
-      API.privacidad.consentimiento(sesion.id)
+      API.privacidad.consentimiento(sesion.id), API.citas.lista(), API.citas.agenda()
     ]);
     const [resAnalisis, casosAnalisis] = await Promise.all([API.analisis.resultados(), API.analisis.casos()]);
     D = { emps, consultas, mio, evaluaciones, riesgos, incapacidades, docs, programa, vacunas, campanas, expedientes,
-          resAnalisis, casosAnalisis, consentimiento };
+          resAnalisis, casosAnalisis, consentimiento, citas, agenda };
   }
 
   let vista = vistas[0].id;
-  ZX.bindVistas(v => { vista = v; pacienteSel = null; render(); });
-  ZX.arranque(async function () { ZX.cargando(main); await recargar(); render(); });
+  const nav = ZX.bindVistas(v => { vista = v; pacienteSel = null; render(); });
+  /* Enlace directo de la barra superior: medico.html#cita abre el formulario de agendar */
+  const atenderHash = ZX.alHash(h => { if (h === 'cita' && D.agenda) { nav.ir('citas'); popupCita(); } });
+  ZX.arranque(async function () { ZX.cargando(main); await recargar(); render(); atenderHash(); });
   async function refrescar() { await recargar(); render(); }
   function render() {
+    if (!D.agenda) return;                   // todavía cargando: arranque() pinta al terminar
     ({ ficha, expediente, pacientes, riesgos: riesgosGlobal, ausentismo, vigilancias,
-       programa: programaGlobal, campanas: campanasGlobal, altas: altasGlobal }[vista] || ficha)();
+       programa: programaGlobal, campanas: campanasGlobal, altas: altasGlobal, citas: misCitas, agenda: agendaMedico }[vista] || ficha)();
   }
 
   const AVISO =
@@ -93,7 +99,7 @@
       '<div class="card"><div class="card-t">1 · Datos de identificación</div>' +
         '<div class="frow">' +
           ro('Número de empleado', yo.id) + ro('Nombre completo', yo.nombre) +
-          ro('Puesto', yo.puesto) + ro('Departamento', yo.depto) +
+          ro('Puesto', yo.puesto) + ro('Dirección', yo.direccion) + ro('Departamento', yo.departamento) +
           ro('Fecha de ingreso a ZX', fmt(yo.ingreso)) + ro('Antigüedad', ZX.antiguedad(yo.ingreso) + ' años') +
         '</div>' +
         '<div class="frow">' +
@@ -151,7 +157,7 @@
         : '') +
 
       '<div class="btn-row"><button class="btn" type="submit">Guardar historia clínica</button>' +
-      '<a class="btn gh" href="citas.html">📅 Agendar una cita</a></div>' +
+      '<a class="btn gh" href="medico.html#cita">📅 Agendar una cita</a></div>' +
       '</form>';
 
     ZX.pie(main, 'Las secciones 1 a 3 las declara el colaborador. Las evaluaciones, dictámenes, riesgos de trabajo, incapacidades y vigilancia los captura únicamente el servicio médico.');
@@ -257,7 +263,7 @@
 
     main.innerHTML =
       cab(esOtro ? 'Expediente · ' + emp.nombre : 'Mi expediente',
-          emp.id + ' · ' + emp.puesto + ' · ' + emp.depto + ' · ' + (emp.area || '') + ' · turno ' + (emp.turno || '—') +
+          emp.id + ' · ' + emp.puesto + ' · ' + (emp.direccion || '') + ' · ' + (emp.departamento || '') + ' · turno ' + (emp.turno || '—') +
           ((ctx.cue.nacimiento || emp.nacimiento) ? ' · ' + edad(ctx.cue.nacimiento || emp.nacimiento) + ' años' : ''),
           (esOtro ? '<button class="btn" id="nueva">＋ Registrar consulta</button>' +
                     '<button class="btn gh" id="imprimir">🖨️ Imprimir</button>' +
@@ -438,7 +444,7 @@
     if (!c.actualizado) return '<div class="tbl-wrap"><div class="empty">El colaborador aún no ha llenado su historia clínica.</div></div>';
     return '<div class="card"><div class="card-t">1 · Datos de identificación</div><div class="frow">' +
         ro('Número de empleado', e.id) + ro('Nombre completo', e.nombre) + ro('Puesto', e.puesto) +
-        ro('Departamento', e.depto) + ro('Fecha de ingreso', fmt(e.ingreso)) + ro('CURP', c.curp) +
+        ro('Dirección', e.direccion) + ro('Departamento', e.departamento) + ro('Fecha de ingreso', fmt(e.ingreso)) + ro('CURP', c.curp) +
         ro('Fecha de nacimiento', fmt(c.nacimiento || e.nacimiento)) + ro('Edad', (c.nacimiento || e.nacimiento) ? edad(c.nacimiento || e.nacimiento) + ' años' : '—') +
         ro('Sexo', c.sexo) + ro('Tipo de jornada', c.jornada + (c.jornadaDetalle ? ' — ' + c.jornadaDetalle : '')) +
         ro('Contacto de emergencia', c.contactoEmergencia) + ro('Teléfono de emergencia', c.telefonoEmergencia) +
@@ -671,14 +677,14 @@
      =========================================================== */
   let busca = '';
   function pacientes() {
-    const lista = D.emps.filter(e => !busca || (e.nombre + ' ' + e.id + ' ' + e.depto).toLowerCase().indexOf(busca.toLowerCase()) >= 0);
+    const lista = D.emps.filter(e => !busca || (e.nombre + ' ' + e.id + ' ' + (e.direccion || '') + ' ' + (e.departamento || '')).toLowerCase().indexOf(busca.toLowerCase()) >= 0);
     main.innerHTML =
       cab('Pacientes', D.emps.length + ' colaboradores con expediente ocupacional') +
       AVISO +
       '<div class="filters"><div class="field" style="min-width:290px"><label>Buscar por nombre, número o departamento</label>' +
-        '<input id="q" value="' + esc(busca) + '" placeholder="Ej. nombre, nómina o área"></div></div>' +
+        '<input id="q" value="' + esc(busca) + '" placeholder="Ej. nombre, nómina o departamento"></div></div>' +
       tabla([
-        { t: 'Nº', k: 'id' }, { t: 'Nombre', k: 'nombre' }, { t: 'Departamento', k: 'depto' }, { t: 'Puesto', k: 'puesto' },
+        { t: 'Nº', k: 'id' }, { t: 'Nombre', k: 'nombre' }, { t: 'Dirección', k: 'direccion' }, { t: 'Puesto', k: 'puesto' },
         { t: 'Dictamen', html: e => { const ev = D.evaluaciones.filter(x => x.empleado === e.id).sort(desc('fecha'))[0];
             return ev ? chipDictamen(ev) : '<span class="chip nt">Sin evaluación</span>'; } },
         { t: 'Consultas', v: e => D.consultas.filter(c => c.empleado === e.id).length },
@@ -770,7 +776,7 @@
 
   async function vigilancias() {
     const todos = await Promise.all(D.emps.map(e => API.medico.vigilancia(e.id)));
-    const filas = todos.map((v, i) => Object.assign({}, v, { nombre: D.emps[i].nombre, depto: D.emps[i].depto, id: D.emps[i].id }))
+    const filas = todos.map((v, i) => Object.assign({}, v, { nombre: D.emps[i].nombre, direccion: D.emps[i].direccion, id: D.emps[i].id }))
       .filter(v => v.programa || v.proximaValoracion)
       .sort((a, b) => String(a.proximaValoracion).localeCompare(String(b.proximaValoracion)));
     const vencen = filas.filter(v => v.proximaValoracion && v.proximaValoracion <= sumaDias(hoyISO(), 30));
@@ -786,7 +792,7 @@
       '</div>' +
       '<h2 class="sec-t">Programas activos</h2>' +
       tabla([
-        { t: 'Nº', k: 'id' }, { t: 'Colaborador', k: 'nombre' }, { t: 'Departamento', k: 'depto' },
+        { t: 'Nº', k: 'id' }, { t: 'Colaborador', k: 'nombre' }, { t: 'Dirección', k: 'direccion' },
         { t: 'Programa', k: 'programa' }, { t: 'Periodicidad', k: 'periodicidad' },
         { t: 'Próxima valoración', html: v => !v.proximaValoracion ? '—'
             : v.proximaValoracion <= hoyISO() ? '<span class="chip no">Vencida ' + esc(fmt(v.proximaValoracion)) + '</span>'
@@ -920,7 +926,7 @@
         '<fieldset><legend>Evento</legend><div class="frow">' +
           selc('tipoRT', 'Tipo', CAT.tiposRiesgo.map(t => [t.c, t.n])) +
           txt('fechaRT', 'Fecha', hoyISO(), 'date') + txt('horaRT', 'Hora', '', 'time') +
-          txt('areaRT', 'Área involucrada', emp.depto) + txt('puestoRT', 'Puesto involucrado', emp.puesto) +
+          txt('areaRT', 'Área involucrada', emp.departamento) + txt('puestoRT', 'Puesto involucrado', emp.puesto) +
           txt('mecanismo', 'Mecanismo de lesión', '') +
         '</div>' +
         area('descripcionRT', 'Descripción del evento', '') +
@@ -1198,7 +1204,7 @@
     const cumpl = D.programa.length ? Math.round(realizadas / D.programa.length * 100) : 0;
     const cols = [
       { t: 'Folio', k: 'id' }, { t: 'Colaborador', v: p => nombreDe(p.empleado) },
-      { t: 'Departamento', v: p => empDe(p.empleado).depto },
+      { t: 'Dirección', v: p => empDe(p.empleado).direccion },
       { t: 'Tipo', v: p => nombreCat(CAT.tiposEvaluacion, p.tipo) },
       { t: 'Programa', k: 'programa' }, { t: 'Fecha programada', v: p => fmt(p.programada) },
       { t: 'Estado', k: 'estado' }
@@ -1261,7 +1267,7 @@
         (Object.keys(porBiologico).length ? '' : '<div class="empty">Sin aplicaciones registradas.</div>') + '</div>' +
       '<h2 class="sec-t">Dosis pendientes</h2>' +
       tabla([
-        { t: 'Colaborador', v: v => nombreDe(v.empleado) }, { t: 'Departamento', v: v => empDe(v.empleado).depto },
+        { t: 'Colaborador', v: v => nombreDe(v.empleado) }, { t: 'Dirección', v: v => empDe(v.empleado).direccion },
         { t: 'Biológico', k: 'biologico' }, { t: 'Última dosis', v: v => v.dosis + ' · ' + fmt(v.fecha) },
         { t: 'Vencida desde', v: v => fmt(v.proximaDosis) },
         { t: '', html: v => '<button class="btn sm" data-abrir="' + esc(v.empleado) + '">Expediente</button>' }
@@ -1301,7 +1307,7 @@
   function altasGlobal() {
     const filas = D.emps.map(e => {
       const x = D.expedientes.find(v => v.empleado === e.id) || { estado: 'sin_iniciar', alta: '', baja: '', conservarHasta: '' };
-      return Object.assign({}, x, { id: e.id, nombre: e.nombre, depto: e.depto, puesto: e.puesto, ingreso: e.ingreso, estatusEmp: e.estatus });
+      return Object.assign({}, x, { id: e.id, nombre: e.nombre, direccion: e.direccion, puesto: e.puesto, ingreso: e.ingreso, estatusEmp: e.estatus });
     });
     main.innerHTML =
       cab('Alta y baja de expedientes', 'Etapas 1 y 9 del flujo: RH activa el expediente al ingreso y lo cierra al término de la relación laboral') +
@@ -1315,7 +1321,7 @@
       '</div>' +
       '<div style="height:14px"></div>' +
       tabla([
-        { t: 'Nº', k: 'id' }, { t: 'Nombre', k: 'nombre' }, { t: 'Departamento', k: 'depto' },
+        { t: 'Nº', k: 'id' }, { t: 'Nombre', k: 'nombre' }, { t: 'Dirección', k: 'direccion' },
         { t: 'Ingreso', v: f => fmt(f.ingreso) },
         { t: 'Expediente', html: f => chipExpediente(f) },
         { t: 'Alta', v: f => f.alta ? fmt(f.alta) : '—' },
@@ -1361,6 +1367,148 @@
   function interpIMC(i) { return i < 18.5 ? 'Bajo peso' : i < 25 ? 'Peso normal' : i < 30 ? 'Sobrepeso' : 'Obesidad'; }
   function nombreCat(cat, c) { const x = cat.find(v => v.c === c); return x ? x.n : (c || '—'); }
   function desc(campo) { return (a, b) => String(b[campo]).localeCompare(String(a[campo])); }
+  /* ===========================================================
+     CITAS — antes eran un módulo aparte; ahora viven aquí.
+     Todos: Mis citas y el formulario para agendar (popup).
+     Servicio médico: además, la agenda del día y de la semana.
+     =========================================================== */
+  function misCitas() {
+    const c = D.citas.filter(x => x.empleado === sesion.id).sort((a, b) => (b.fecha + b.hora).localeCompare(a.fecha + a.hora));
+    const prox = c.filter(x => x.estado === 'confirmada' && x.fecha >= hoyISO());
+    main.innerHTML =
+      cab('Mis citas', prox.length ? 'Tienes ' + prox.length + ' cita(s) por delante' : 'No tienes citas próximas',
+          '<button class="btn" id="nueva">＋ Agendar cita</button>') +
+      tabla([
+        { t: 'Folio', k: 'id' },
+        { t: 'Fecha', v: x => fmtLargo(x.fecha) },
+        { t: 'Hora', k: 'hora' },
+        { t: 'Motivo', k: 'motivo' },
+        { t: 'Estado', html: x => chip(x.estado) },
+        { t: '', html: x => (x.estado === 'confirmada' && x.fecha >= hoyISO())
+            ? '<button class="btn gh sm" data-cancel="' + esc(x.id) + '">Cancelar</button>' : '' }
+      ], c, { vacio: 'Todavía no has agendado ninguna cita.' });
+    ZX.pie(main, 'Cancela con al menos 24 horas de anticipación para liberar el horario a otro colaborador.');
+
+    $('#nueva').addEventListener('click', popupCita);
+    $$('[data-cancel]').forEach(b => b.addEventListener('click', () => {
+      confirmar('Cancelar cita', '¿Seguro que quieres cancelar la cita ' + b.dataset.cancel + '? El horario quedará libre para alguien más.', async () => {
+        try { await API.citas.cancelar(b.dataset.cancel, 'Cancelada por el colaborador'); toast('Cita cancelada.', 'ok'); await refrescar(); }
+        catch (e) { toast(e.message, 'no'); }
+      });
+    }));
+  }
+
+  function proximoHabil(f) {
+    let x = f;
+    for (let i = 0; i < 10; i++) {
+      if (D.agenda.diasHabiles.indexOf(parse(x).getDay()) >= 0) return x;
+      x = sumaDias(x, 1);
+    }
+    return f;
+  }
+
+  /* Formulario para agendar: popup con el mismo calendario que vacaciones y banco de horas */
+  function popupCita() {
+    const ag = D.agenda;
+    let fecha = null, token = 0;
+    const medico = ag.medico ? nombreDe(ag.medico) : '';
+    const body = modal({
+      titulo: 'Agendar cita médica',
+      cuerpo:
+        '<div class="disp-big" style="font-size:19px">Servicio médico de empresa</div>' +
+        '<div class="disp-sub" style="margin-bottom:4px">' + esc((medico ? medico + ' · ' : '') + 'consultas de ' + ag.duracionMin + ' minutos') + '</div>' +
+        '<div class="disp-sub">Selecciona el día en el calendario</div>' +
+        '<div id="cal"></div>' +
+        '<div class="fm-nota">Atención de lunes a viernes. Los días sin servicio aparecen deshabilitados.</div>' +
+        '<div class="frow" style="margin-top:12px">' +
+          '<div class="field"><label>Fecha</label><input id="f" readonly placeholder="—"></div>' +
+          '<div class="field"><label for="h">Hora</label><select id="h" disabled><option value="">Selecciona una fecha</option></select></div>' +
+        '</div>' +
+        '<div class="fm-nota" id="libres" style="margin:-4px 0 10px"></div>' +
+        '<div class="field"><label for="motivo">Motivo de la consulta</label>' +
+          '<input id="motivo" maxlength="150" placeholder="Ej. Revisión general, seguimiento, malestar"></div>',
+      botones: [
+        { txt: 'Cancelar', clase: 'gh' },
+        { txt: 'Confirmar cita', accion: async (b) => {
+            const hora = $('#h', b).value, motivo = $('#motivo', b).value.trim();
+            if (!fecha || !hora) return toast('Selecciona fecha y hora.', 'wa');
+            if (!motivo) return toast('Escribe el motivo de la consulta.', 'wa');
+            try {
+              await API.citas.agendar({ empleado: sesion.id, fecha, hora, motivo });
+              cerrarModal(); toast('Cita confirmada para el ' + fmt(fecha) + ' a las ' + hora + '.', 'ok');
+              await recargar(); nav.ir('citas');
+            } catch (e) { toast(e.message, 'no'); }
+          } }
+      ]
+    });
+
+    async function pintaHoras(f) {
+      const yo = ++token, sel = $('#h', body), nota = $('#libres', body);
+      $('#f', body).value = fmt(f);
+      sel.disabled = true; sel.innerHTML = '<option value="">Consultando disponibilidad…</option>'; nota.textContent = '';
+      let d;
+      try { d = await API.citas.disponibilidad(f); } catch (e) { sel.innerHTML = '<option value="">—</option>'; return toast(e.message, 'no'); }
+      if (yo !== token) return;                                        // se eligió otro día mientras tanto
+      if (!d.habil) { sel.innerHTML = '<option value="">Sin servicio ese día</option>'; nota.textContent = 'El servicio médico no atiende ese día.'; return; }
+      if (d.bloqueo) { sel.innerHTML = '<option value="">Sin servicio</option>'; nota.textContent = 'Sin servicio: ' + d.bloqueo; return; }
+      const libres = d.slots.filter(s => s.libre);
+      if (!libres.length) { sel.innerHTML = '<option value="">Sin horarios disponibles</option>'; nota.textContent = 'No quedan horarios disponibles el ' + fmt(f) + '.'; return; }
+      sel.innerHTML = '<option value="">Selecciona una hora</option>' + libres.map(s => '<option value="' + esc(s.hora) + '">' + esc(s.hora) + ' h</option>').join('');
+      sel.disabled = false;
+      nota.textContent = libres.length + ' de ' + d.slots.length + ' horarios disponibles el ' + fmt(f) + '.';
+    }
+    fecha = proximoHabil(hoyISO());
+    calendario($('#cal', body), {
+      valor: fecha, min: hoyISO(),
+      deshabilitado: f => ag.diasHabiles.indexOf(parse(f).getDay()) < 0,
+      onPick: f => { fecha = f; pintaHoras(f); }
+    });
+    pintaHoras(fecha);
+  }
+
+  /* Agenda del servicio médico: citas del día y de los próximos 7 días */
+  let diaAgenda = null;
+  function agendaMedico() {
+    if (!diaAgenda) diaAgenda = hoyISO();
+    const dia = D.citas.filter(c => c.fecha === diaAgenda && c.estado !== 'cancelada').sort((a, b) => a.hora.localeCompare(b.hora));
+    const semana = D.citas.filter(c => c.fecha >= hoyISO() && c.fecha <= sumaDias(hoyISO(), 6) && c.estado === 'confirmada');
+    const cap = D.agenda.horarios.length;
+
+    main.innerHTML =
+      cab('Agenda del médico', fmtLargo(diaAgenda),
+        '<div class="btn-row"><button class="btn gh sm" id="a">‹ Día anterior</button>' +
+        '<button class="btn gh sm" id="h">Hoy</button><button class="btn gh sm" id="s">Día siguiente ›</button></div>') +
+      '<div class="grid g4">' +
+        k('Citas del día', dia.length, 'Confirmadas y atendidas') +
+        k('Próximos 7 días', semana.length, 'Citas confirmadas') +
+        k('Horarios del día', cap, 'Capacidad instalada') +
+        k('Ocupación', cap ? Math.round(dia.length / cap * 100) + '%' : '—', 'Del día seleccionado', cap && (dia.length / cap) > 0.8 ? 'dn' : 'gn') +
+      '</div>' +
+      '<h2 class="sec-t">Citas del día</h2>' +
+      tabla([
+        { t: 'Hora', k: 'hora' },
+        { t: 'Colaborador', v: c => nombreDe(c.empleado) },
+        { t: 'Departamento', v: c => empDe(c.empleado).departamento || '' },
+        { t: 'Motivo', k: 'motivo' },
+        { t: 'Estado', html: c => chip(c.estado) },
+        { t: '', html: c => c.estado === 'confirmada'
+            ? '<button class="btn sm" data-exp="' + esc(c.empleado) + '">Abrir expediente</button>' : '' }
+      ], dia, { vacio: 'Sin citas agendadas para este día.' }) +
+      '<h2 class="sec-t">Próximos 7 días</h2>' +
+      tabla([
+        { t: 'Fecha', v: c => fmtLargo(c.fecha) },
+        { t: 'Hora', k: 'hora' },
+        { t: 'Colaborador', v: c => nombreDe(c.empleado) },
+        { t: 'Motivo', k: 'motivo' }
+      ], semana.sort((a, b) => (a.fecha + a.hora).localeCompare(b.fecha + b.hora)), { vacio: 'Sin citas en la semana.' });
+
+    ZX.pie(main, 'La ocupación compara las citas del día contra los horarios configurados en la agenda del servicio médico.');
+    $('#a').addEventListener('click', () => { diaAgenda = sumaDias(diaAgenda, -1); agendaMedico(); });
+    $('#s').addEventListener('click', () => { diaAgenda = sumaDias(diaAgenda, 1); agendaMedico(); });
+    $('#h').addEventListener('click', () => { diaAgenda = hoyISO(); agendaMedico(); });
+    $$('[data-exp]').forEach(b => b.addEventListener('click', () => { tabExp = 'resumen'; verExpediente(b.dataset.exp, true); }));
+  }
+
   function cab(t, sub, acciones) {
     return '<div class="page-head"><div><h1 class="page-t">' + esc(t) + '</h1>' +
            '<div class="page-sub">' + esc(sub || '') + '</div></div><div class="btn-row">' + (acciones || '') + '</div></div>';

@@ -38,19 +38,18 @@
   function render() { ({ tablero, movs: listaMovs, nuevo, maestro, expedientes }[vista] || tablero)(); }
 
   /* ================= MAESTRO DE COLABORADORES =================
-     Datos que administra Relaciones Laborales: puesto, área, turno,
+     Datos que administra Relaciones Laborales: puesto, departamento, turno,
      antigüedad y estatus. En el modelo final estos campos llegarán
      desde IBIX y esta pantalla quedará sólo de consulta. */
-  let qm = '', fArea = '', fTurno = '';
+  let qm = '', fDep = '', fTurno = '';
   function maestro() {
-    const D2 = { AREAS: D.cats.areas, TURNOS: D.cats.turnos, DEPARTAMENTOS: D.cats.departamentos };
     const lista = D.emps.filter(e =>
-      (!fArea || e.area === fArea) && (!fTurno || e.turno === fTurno) &&
-      (!qm || (e.nombre + ' ' + e.id + ' ' + e.depto + ' ' + (e.puesto || '')).toLowerCase().indexOf(qm.toLowerCase()) >= 0));
+      (!fDep || e.departamento === fDep) && (!fTurno || e.turno === fTurno) &&
+      (!qm || (e.nombre + ' ' + e.id + ' ' + (e.direccion || '') + ' ' + (e.departamento || '') + ' ' + (e.puesto || '')).toLowerCase().indexOf(qm.toLowerCase()) >= 0));
     const sinTurno = D.emps.filter(e => !e.turno).length;
     const cols = [
       { t: 'Nº', k: 'id' }, { t: 'Nombre', k: 'nombre' }, { t: 'Puesto', k: 'puesto' },
-      { t: 'Departamento', k: 'depto' }, { t: 'Área', k: 'area' }, { t: 'Turno', k: 'turno' },
+      { t: 'Dirección', k: 'direccion' }, { t: 'Departamento', k: 'departamento' }, { t: 'Turno', k: 'turno' },
       { t: 'Ingreso', v: e => fmt(e.ingreso) }, { t: 'Antigüedad', v: e => ZX.antiguedad(e.ingreso) + ' años' },
       { t: 'Estatus', k: 'estatus' }
     ];
@@ -59,31 +58,31 @@
       cab('Maestro de colaboradores', D.emps.length + ' registros · datos laborales que alimentan los indicadores',
           '<button class="btn gh" id="csv">⬇ CSV</button><button class="btn" id="ibix">⬆ Importar desde IBIX</button>') +
       '<div class="priv">🔄 <div><b>Origen de estos datos.</b> Hoy se capturan en el portal. El objetivo es que <b>IBIX</b> sea la ' +
-      'fuente única de los datos laborales (puesto, área, turno, antigüedad y estatus) y que el portal los consuma de ahí. ' +
-      'Mientras tanto, mantener el turno y el área actualizados es lo que hace confiable el indicador de tendencias por área y turno.</div></div>' +
+      'fuente única de los datos laborales (puesto, departamento, turno, antigüedad y estatus) y que el portal los consuma de ahí. ' +
+      'Mientras tanto, mantener el turno y el departamento actualizados es lo que hace confiable el indicador de tendencias por departamento y turno.</div></div>' +
       '<div class="grid g4">' +
         k('Colaboradores activos', D.emps.filter(e => e.estatus !== 'baja').length, 'En el registro de personal') +
-        k('Áreas', new Set(D.emps.map(e => e.area).filter(Boolean)).size, 'Con personal asignado') +
+        k('Departamentos', new Set(D.emps.map(e => e.departamento).filter(Boolean)).size, 'Con personal asignado') +
         k('Turnos en uso', new Set(D.emps.map(e => e.turno).filter(Boolean)).size, 'Configurados') +
         k('Sin turno asignado', sinTurno, sinTurno ? 'Afectan los indicadores por turno' : 'Registro completo', sinTurno ? 'dn' : 'gn') +
       '</div>' +
       '<div class="filters" style="margin-top:14px">' +
         '<div class="field" style="min-width:230px"><label>Buscar</label>' +
-          '<input id="qm" value="' + esc(qm) + '" placeholder="Nombre, número, puesto o departamento"></div>' +
-        '<div class="field"><label>Área</label><select id="fa">' +
-          opts([['', 'Todas']].concat(D2.AREAS.map(a => [a, a])), fArea) + '</select></div>' +
+          '<input id="qm" value="' + esc(qm) + '" placeholder="Nombre, número, puesto, dirección o departamento"></div>' +
+        '<div class="field"><label>Departamento</label><select id="fa">' +
+          opts([['', 'Todos']].concat(D.cats.departamentos.map(a => [a, a])), fDep) + '</select></div>' +
         '<div class="field"><label>Turno</label><select id="ft2">' +
-          opts([['', 'Todos']].concat(D2.TURNOS.map(t => [t, t])), fTurno) + '</select></div>' +
+          opts([['', 'Todos']].concat(D.cats.turnos.map(t => [t, t])), fTurno) + '</select></div>' +
       '</div>' +
       tabla(cols.slice(0, 8).concat([
         { t: 'Estatus', html: e => '<span class="chip ' + (e.estatus === 'baja' ? 'no' : 'ok') + '">' + esc(e.estatus || 'activo') + '</span>' },
         { t: '', html: e => '<button class="btn sm" data-edit="' + esc(e.id) + '">Editar</button>' }
       ]), lista, { vacio: 'Sin coincidencias.' });
 
-    ZX.pie(main, 'Área y turno son datos maestros: los indicadores de salud ocupacional por área y turno se calculan con estos campos, no con lo que declara el colaborador en su historia clínica.');
+    ZX.pie(main, 'Departamento y turno son datos maestros: los indicadores de salud ocupacional por departamento y turno se calculan con estos campos, no con lo que declara el colaborador en su historia clínica.');
     const qi = $('#qm');
     qi.addEventListener('input', () => { qm = qi.value; const p = qi.selectionStart; maestro(); const n = $('#qm'); n.focus(); n.setSelectionRange(p, p); });
-    $('#fa').addEventListener('change', e => { fArea = e.target.value; maestro(); });
+    $('#fa').addEventListener('change', e => { fDep = e.target.value; maestro(); });
     $('#ft2').addEventListener('change', e => { fTurno = e.target.value; maestro(); });
     $('#csv').addEventListener('click', () => descargarCSV('Maestro_Colaboradores_' + hoyISO() + '.csv', cols, lista));
     $('#ibix').addEventListener('click', abrirImportadorIBIX);
@@ -97,11 +96,9 @@
      llama a API.empleados.sincronizarIBIX — que nunca toca nivel/perfil:
      esos se asignan a mano en Administración después de importar. */
   const ALIAS_IBIX = {
-    id:      ['nomina', 'noempleado', 'numeroempleado', 'numempleado', 'no', 'id', 'empleado', 'clave', 'numerodeempleado', 'nodeempleado'],
+    id:      ['nomina', 'nonomina', 'numnomina', 'numeronomina', 'nominaempleado', 'noempleado', 'numeroempleado', 'numempleado', 'no', 'id', 'empleado', 'clave', 'numerodeempleado', 'nodeempleado'],
     nombre:  ['nombre', 'nombrecompleto', 'colaborador', 'nombredelcolaborador'],
     correo:  ['correo', 'email', 'correoelectronico', 'mail'],
-    depto:   ['departamento', 'depto'],
-    area:    ['area', 'planta'],
     turno:   ['turno'],
     puesto:  ['puesto', 'posicion', 'puestoactual', 'cargo'],
     jefe:    ['jefe', 'supervisor', 'jefedirecto', 'reportaa', 'nojefe', 'nominajefe'],
@@ -114,15 +111,41 @@
      cortas como "no" con fragmentos de otras palabras. */
   const normalizar = h => String(h || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
 
+  /* Dirección y Departamento: el sistema anterior (y la exportación de IBIX que se ha usado hasta
+     ahora) llama "Departamento" a lo que aquí es la DIRECCIÓN (DIR. ADMVO.) y "Area" a lo que aquí es el
+     DEPARTAMENTO (IMPRESIÓN). Por eso se detecta el formato del archivo:
+       · si trae una columna "Dirección" → formato nuevo: "Departamento" es el departamento;
+       · si trae "Departamento" y "Area" (sin "Dirección") → formato anterior: Departamento → Dirección, Area → Departamento;
+       · si trae sólo "Departamento" → se asume formato anterior (Dirección) y se avisa en la vista previa. */
   function mapearEncabezados(headers) {
     const mapa = {}; // campo → encabezado original que hace match
     const usados = new Set();
+    const trae = (...alias) => headers.find(h => alias.indexOf(normalizar(h)) >= 0);
+    const colDir = trae('direccion', 'dir'), colDepto = trae('departamento', 'depto'), colArea = trae('area', 'planta');
+    let formato = null, aviso = null;
+    if (colDir) {
+      mapa.direccion = colDir;
+      const dep = colDepto || colArea; if (dep) mapa.departamento = dep;
+      formato = 'Formato nuevo: «' + colDir + '» → Dirección' + (dep ? ' y «' + dep + '» → Departamento.' : '.');
+    } else if (colDepto && colArea) {
+      mapa.direccion = colDepto; mapa.departamento = colArea;
+      formato = 'Formato anterior: «' + colDepto + '» → Dirección y «' + colArea + '» → Departamento.';
+    } else if (colDepto) {
+      mapa.direccion = colDepto;
+      formato = 'Formato anterior: «' + colDepto + '» → Dirección.';
+      aviso = 'El archivo trae una sola columna «' + colDepto + '» y se interpretó como Dirección (como en el sistema anterior). ' +
+              'Si contiene departamentos (por ejemplo IMPRESIÓN o COMPRAS), cancela la importación: se crearían direcciones equivocadas.';
+    } else if (colArea) {
+      mapa.departamento = colArea;
+      formato = 'Formato anterior: «' + colArea + '» → Departamento.';
+    }
+    [colDir, colDepto, colArea].forEach(h => { if (h && Object.values(mapa).indexOf(h) >= 0) usados.add(h); });
     Object.keys(ALIAS_IBIX).forEach(campo => {
       const alias = ALIAS_IBIX[campo];
       const encontrado = headers.find(h => !usados.has(h) && alias.indexOf(normalizar(h)) >= 0);
       if (encontrado) { mapa[campo] = encontrado; usados.add(encontrado); }
     });
-    return mapa;
+    return { mapa, formato, aviso };
   }
 
   function abrirImportadorIBIX() {
@@ -143,7 +166,7 @@
     const { headers, filas } = ZX.leerCSV(texto);
     if (!headers.length) return toast('El archivo está vacío o no se pudo interpretar como CSV.', 'no');
 
-    const mapa = mapearEncabezados(headers);
+    const { mapa, formato, aviso } = mapearEncabezados(headers);
     const sinMapear = headers.filter(h => Object.values(mapa).indexOf(h) < 0);
     if (!mapa.id) {
       return toast('No encontré una columna de número de nómina en "' + nombreArchivo + '". Encabezados leídos: ' + headers.join(', '), 'no');
@@ -163,6 +186,8 @@
         '<p style="font-size:13px;margin-bottom:10px">' + filas.length + ' filas leídas, ' + conId + ' con número de nómina.</p>' +
         '<div class="field"><label>Columnas reconocidas</label>' +
           '<p style="font-size:12.5px">' + Object.keys(mapa).map(c => '<span class="chip ok" style="margin:2px">' + esc(c) + ' ← ' + esc(mapa[c]) + '</span>').join(' ') + '</p></div>' +
+        (formato ? '<div class="priv" style="align-items:flex-start">🧭 <div><b>' + esc(formato) + '</b></div></div>' : '') +
+        (aviso ? '<div class="priv" style="align-items:flex-start;border-color:var(--wn)">⚠️ <div>' + esc(aviso) + '</div></div>' : '') +
         (sinMapear.length ? '<div class="field"><label>Columnas del archivo que se ignorarán</label>' +
           '<p style="font-size:12.5px;color:var(--tx2)">' + esc(sinMapear.join(', ')) + '</p></div>' : '') +
         '<div class="priv" style="align-items:flex-start">🔄 <div>Esto <b>no toca nivel ni perfil</b> de nadie. Colaboradores nuevos entran con acceso ' +
@@ -229,16 +254,15 @@
   }
 
   function popupMaestro(id) {
-    const D2 = { AREAS: D.cats.areas, TURNOS: D.cats.turnos, DEPARTAMENTOS: D.cats.departamentos };
     const e = empDe(id);
     modal({
       titulo: 'Datos laborales · ' + e.nombre,
       cuerpo:
         '<div class="frow">' +
           fldv('puestoM', 'Puesto', e.puesto) +
-          selv('deptoM', 'Departamento', D2.DEPARTAMENTOS, e.depto) +
-          selv('areaM', 'Área', D2.AREAS, e.area) +
-          selv('turnoM', 'Turno', D2.TURNOS, e.turno) +
+          selv('direccionM', 'Dirección', D.cats.direcciones, e.direccion) +
+          selv('departamentoM', 'Departamento', D.cats.departamentos, e.departamento) +
+          selv('turnoM', 'Turno', D.cats.turnos, e.turno) +
           fldv('ingresoM', 'Fecha de ingreso', e.ingreso, 'date') +
           selv('estatusM', 'Estatus', ['activo', 'baja'], e.estatus || 'activo') +
         '</div>' +
@@ -248,8 +272,8 @@
         { txt: 'Guardar', accion: async (b) => {
             try {
               await API.empleados.actualizar(id, {
-                puesto: $('#puestoM', b).value.trim(), depto: $('#deptoM', b).value,
-                area: $('#areaM', b).value, turno: $('#turnoM', b).value,
+                puesto: $('#puestoM', b).value.trim(), direccion: $('#direccionM', b).value,
+                departamento: $('#departamentoM', b).value, turno: $('#turnoM', b).value,
                 ingreso: $('#ingresoM', b).value, estatus: $('#estatusM', b).value
               });
               await API.auditoria.registrar('maestro.actualizar', id, id, 'Actualización de datos laborales');
@@ -318,13 +342,13 @@
   function listaMovs() {
     const f = D.movs.filter(x =>
       (!fEstado || x.estado === fEstado) && (!fTipo || x.tipo === fTipo) &&
-      (!q || (x.folio + ' ' + x.empleadoNombre + ' ' + x.depto).toLowerCase().indexOf(q.toLowerCase()) >= 0));
+      (!q || (x.folio + ' ' + x.empleadoNombre + ' ' + (x.departamento || '')).toLowerCase().indexOf(q.toLowerCase()) >= 0));
 
     const cols = [
       { t: 'Folio', k: 'folio' },
       { t: 'Tipo', v: x => x.tipo + ') ' + x.tipoNombre },
       { t: 'Colaborador', v: x => x.empleadoNombre },
-      { t: 'Departamento', k: 'depto' },
+      { t: 'Departamento', k: 'departamento' },
       { t: 'Elaboración', v: x => fmt(x.elaboracion) },
       { t: 'Aplicación', v: x => fmt(x.aplicacion) },
       { t: 'Firmas', v: x => x.firmas.filter(s => s.estado === 'firmado').length + '/' + x.firmas.length },
@@ -387,7 +411,7 @@
       '<div class="grid g2">' +
         '<div class="card"><div class="card-t">Datos generales</div><div class="frow">' +
           ro('Nº de empleado', m.noEmpleado) + ro('Nombre', m.empleadoNombre) + ro('Puesto', m.puesto) +
-          ro('Dirección', m.direccion) + ro('Departamento', m.depto) + ro('División', m.division) +
+          ro('Dirección', m.direccion) + ro('Departamento', m.departamento) + ro('División', m.division) +
           ro('Jefe al que reporta', m.jefeReporta) + ro('Tipo de personal', m.tipoPersonal) +
           ro('Fecha de elaboración', fmt(m.elaboracion)) + ro('Fecha de aplicación', fmt(m.aplicacion)) +
         '</div></div>' +
@@ -473,6 +497,7 @@
             selEmp() +
             fld('aplicacion', 'Fecha de aplicación', 'date') +
             fld('direccion', 'Dirección') +
+            fld('departamentoRH', 'Departamento') +
             fld('division', 'División') +
             fld('jefeReporta', 'Nombre del jefe al que reporta') +
             selc('tipoPersonal', 'Tipo de personal', ['Administrativo', 'No administrativo', 'Sindicalizado']) +
@@ -497,6 +522,7 @@
 
     const dyn = () => { $('#dyn').innerHTML = camposPorTipo($('#tipo').value); };
     $('#tipo').addEventListener('change', dyn); dyn();
+    ['direccion', 'departamentoRH'].forEach(i => { const el = $('#' + i); if (el) { el.readOnly = true; el.placeholder = 'Se llena con la ficha del colaborador'; } });
     $('#emp').addEventListener('change', autollenar); autollenar();
     $('#borrador').addEventListener('click', () => guardar('borrador'));
     $('#f').addEventListener('submit', e => { e.preventDefault(); guardar('en_firma'); });
@@ -505,7 +531,8 @@
   function autollenar() {
     const e = empDe($('#emp').value);
     if (!e.id) return;
-    $('#direccion').value = $('#direccion').value || 'Operaciones';
+    $('#direccion').value = e.direccion || '';
+    $('#departamentoRH').value = e.departamento || '';
     $('#jefeReporta').value = nombreDe(e.jefe);
   }
 
@@ -542,7 +569,7 @@
       const m = await API.rrhh.crearMovimiento({
         tipo, tipoNombre: t.n, aplicacion: $('#aplicacion').value || hoyISO(), capturadoPor: sesion.id,
         empleado: emp.id, empleadoNombre: emp.nombre, noEmpleado: emp.id, puesto: emp.puesto,
-        direccion: $('#direccion').value, depto: emp.depto, division: $('#division').value,
+        direccion: emp.direccion || '', departamento: emp.departamento || '', division: $('#division').value,
         jefeReporta: $('#jefeReporta').value, tipoPersonal: $('#tipoPersonal').value,
         detalle, comentarios: $('#comentarios').value, estado
       });
@@ -555,14 +582,14 @@
   let qe = '', empSel = null;
   function expedientes() {
     if (empSel) return verExpediente(empSel);
-    const lista = D.emps.filter(e => !qe || (e.nombre + ' ' + e.id + ' ' + e.depto).toLowerCase().indexOf(qe.toLowerCase()) >= 0);
+    const lista = D.emps.filter(e => !qe || (e.nombre + ' ' + e.id + ' ' + (e.direccion || '') + ' ' + (e.departamento || '')).toLowerCase().indexOf(qe.toLowerCase()) >= 0);
     main.innerHTML =
       cab('Expedientes documentales', D.emps.length + ' colaboradores') +
       '<div class="priv">🔐 <div>Este expediente contiene <b>documentación laboral</b>. Los datos clínicos viven en el módulo de servicio médico y no son visibles desde aquí, ni siquiera para Recursos Humanos.</div></div>' +
       '<div class="filters"><div class="field" style="min-width:280px"><label>Buscar</label>' +
         '<input id="q" value="' + esc(qe) + '" placeholder="Nombre, número o departamento"></div></div>' +
       tabla([
-        { t: 'Nº', k: 'id' }, { t: 'Nombre', k: 'nombre' }, { t: 'Departamento', k: 'depto' },
+        { t: 'Nº', k: 'id' }, { t: 'Nombre', k: 'nombre' }, { t: 'Dirección', k: 'direccion' }, { t: 'Departamento', k: 'departamento' },
         { t: 'Puesto', k: 'puesto' }, { t: 'Ingreso', v: e => fmt(e.ingreso) },
         { t: 'Movimientos', v: e => D.movs.filter(m => m.empleado === e.id).length },
         { t: '', html: e => '<button class="btn sm" data-ex="' + esc(e.id) + '">Abrir expediente</button>' }
@@ -581,7 +608,7 @@
     const porVencer = ex.docs.filter(d => d.vence && d.vence <= ZX.sumaDias(hoyISO(), 90));
 
     main.innerHTML =
-      cab('Expediente de ' + e.nombre, e.id + ' · ' + e.puesto + ' · ' + e.depto,
+      cab('Expediente de ' + e.nombre, [e.id, e.puesto, e.direccion, e.departamento].filter(Boolean).join(' · '),
         '<button class="btn" id="add">＋ Registrar documento</button><button class="btn gh" id="back">← Volver</button>') +
       '<div class="grid g4">' +
         k('Documentos', ex.docs.length, 'En el expediente') +

@@ -80,7 +80,7 @@
       '</div>' +
       tabla([
         { t: 'Nº', k: 'id' }, { t: 'Nombre', k: 'nombre' }, { t: 'Reporta a', v: e => e.jefe ? nombreDe(e.jefe) : '—' },
-        { t: 'Departamento', k: 'depto' }, { t: 'Puesto', k: 'puesto' },
+        { t: 'Dirección', k: 'direccion' }, { t: 'Puesto', k: 'puesto' },
         { t: 'Nivel', html: e => '<span class="chip in">' + esc(NIVEL_NOMBRE(e.nivel)) + '</span>' },
         { t: 'Perfil', html: e => e.perfil !== 'ninguno' ? '<span class="chip wn">' + esc(PERFIL_NOMBRE(e.perfil)) + '</span>' : '<span class="chip nt">—</span>' },
         { t: 'Estatus', html: e => '<span class="chip ' + (e.estatus === 'baja' ? 'no' : 'ok') + '">' + esc(e.estatus || 'activo') + '</span>' },
@@ -95,7 +95,7 @@
     $('#fp').addEventListener('change', e => { fPerfil = e.target.value; usuarios(); });
     $('#csv').addEventListener('click', () => descargarCSV('Usuarios_Portal_' + hoyISO() + '.csv', [
       { t: 'Número', k: 'id' }, { t: 'Nombre', k: 'nombre' }, { t: 'Correo', k: 'correo' },
-      { t: 'Departamento', k: 'depto' }, { t: 'Nivel', v: e => NIVEL_NOMBRE(e.nivel) },
+      { t: 'Dirección', k: 'direccion' }, { t: 'Nivel', v: e => NIVEL_NOMBRE(e.nivel) },
       { t: 'Perfil', v: e => PERFIL_NOMBRE(e.perfil) }, { t: 'Estatus', k: 'estatus' }
     ], lista));
     $$('[data-acc]').forEach(b => b.addEventListener('click', () => popupAcceso(b.dataset.acc)));
@@ -178,7 +178,7 @@
     }
     return out;
   }
-  const coincide = (e, q) => !q || (e.nombre + ' ' + e.id + ' ' + (e.puesto || '') + ' ' + (e.depto || '')).toLowerCase().indexOf(q.toLowerCase()) >= 0;
+  const coincide = (e, q) => !q || (e.nombre + ' ' + e.id + ' ' + (e.puesto || '') + ' ' + (e.direccion || '') + ' ' + (e.departamento || '')).toLowerCase().indexOf(q.toLowerCase()) >= 0;
 
   function equipos() {
     const activos = D.emps.filter(e => e.estatus !== 'baja');
@@ -192,7 +192,7 @@
     const filas = visibles.map(e =>
       '<div class="eq-row' + (e.id === selId ? ' on' : '') + '" data-pick="' + esc(e.id) + '">' +
         '<b>' + esc(e.nombre) + '</b>' +
-        '<div class="eq-sub">' + esc(e.puesto || '—') + (e.depto ? ' · ' + esc(e.depto) : '') + '</div>' +
+        '<div class="eq-sub">' + esc(e.puesto || '—') + (e.departamento ? ' · ' + esc(e.departamento) : '') + '</div>' +
         '<div class="eq-sub"><span class="chip in">' + esc(NIVEL_NOMBRE(e.nivel)) + '</span> ' +
           (e.jefe ? 'Reporta a ' + esc(nombreDe(e.jefe)) : '<span style="color:var(--wnt)">Sin jefe asignado</span>') +
           (jefesIds.has(e.id) ? ' · <b>' + equipoDe(e.id).length + ' a su cargo</b>' : '') + '</div>' +
@@ -214,7 +214,7 @@
         '<div class="card eq-left">' +
           '<div class="filters" style="margin-bottom:8px">' +
             '<div class="field" style="flex:1"><label>Buscar persona</label>' +
-              '<input id="qeq" value="' + esc(qEq) + '" placeholder="Nombre, nómina, puesto o departamento"></div>' +
+              '<input id="qeq" value="' + esc(qEq) + '" placeholder="Nombre, nómina, puesto, dirección o departamento"></div>' +
             '<div class="field"><label>Mostrar</label><select id="feq">' +
               [['', 'Todos'], ['sinjefe', 'Sin jefe'], ['jefes', 'Sólo jefes']].map(p =>
                 '<option value="' + p[0] + '"' + (p[0] === fEq ? ' selected' : '') + '>' + p[1] + '</option>').join('') +
@@ -243,7 +243,7 @@
     const migas = arriba.map(x => '<a href="#" data-sel="' + esc(x.id) + '">' + esc(x.nombre) + '</a>').join(' › ');
     return '<div class="card-t">' + esc(e.nombre) + '</div>' +
       '<div style="font-size:12px;color:var(--tx2);margin:-6px 0 10px">Nómina ' + esc(e.id) + ' · ' + esc(e.puesto || '—') +
-        (e.depto ? ' · ' + esc(e.depto) : '') + '</div>' +
+        (e.departamento ? ' · ' + esc(e.departamento) : '') + '</div>' +
       (arriba.length ? '<div style="font-size:12px;margin-bottom:10px">Cadena hacia arriba: ' + migas + ' › <b>' + esc(e.nombre) + '</b></div>' : '') +
 
       '<div class="frow">' +
@@ -335,7 +335,7 @@
         '<div class="field"><label for="nvj">Nivel de ' + esc(e.nombre) + '</label><select id="nvj">' +
           ['coordinador', 'supervisor'].map(n => '<option value="' + n + '"' + (n === nivelInicial ? ' selected' : '') + '>' + esc(NIVELES[n].nombre) + '</option>').join('') +
         '</select><div class="hint">Para aprobar vacaciones y banco de horas de su equipo debe ser Coordinador o Jefe / Gerente.</div></div>' +
-        '<div class="field"><label for="qa">Buscar</label><input id="qa" placeholder="Nombre, nómina, puesto o departamento"></div>' +
+        '<div class="field"><label for="qa">Buscar</label><input id="qa" placeholder="Nombre, nómina, puesto, dirección o departamento"></div>' +
         '<div id="cnt" style="font-size:12px;margin:4px 0"></div>' +
         '<div id="lsta" class="eq-list" style="max-height:320px"></div>',
       botones: [

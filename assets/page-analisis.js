@@ -119,7 +119,7 @@
       tabla([
         { t: 'Caso', k: 'id' },
         { t: 'Colaborador', v: c => nombreDe(c.empleado) },
-        { t: 'Área', v: c => empDe(c.empleado).area },
+        { t: 'Departamento', v: c => empDe(c.empleado).departamento },
         { t: 'Detección', v: c => fmt(c.fechaDeteccion) },
         { t: 'Días abierto', v: c => diffDias(c.fechaDeteccion, hoyISO()) },
         { t: 'Próxima valoración', html: c => !c.proximaValoracion ? '<span class="chip nt">Sin programar</span>'
@@ -143,7 +143,7 @@
       { t: 'Folio', k: 'id' },
       { t: 'Colaborador', v: p => nombreDe(p.empleado) },
       { t: 'Puesto', v: p => empDe(p.empleado).puesto },
-      { t: 'Área', v: p => empDe(p.empleado).area },
+      { t: 'Departamento', v: p => empDe(p.empleado).departamento },
       { t: 'Turno', v: p => empDe(p.empleado).turno },
       { t: 'Tipo de evaluación', v: p => nombreCat(CAT.tiposEvaluacionAnalisis, p.tipoEvaluacion) },
       { t: 'Fecha programada', v: p => fmt(p.programada) },
@@ -175,7 +175,7 @@
         ? '<h2 class="sec-t">Sin programación en el periodo</h2>' +
           tabla([
             { t: 'Nº', k: 'id' }, { t: 'Colaborador', k: 'nombre' }, { t: 'Puesto', k: 'puesto' },
-            { t: 'Área', k: 'area' }, { t: 'Turno', k: 'turno' },
+            { t: 'Departamento', k: 'departamento' }, { t: 'Turno', k: 'turno' },
             { t: '', html: e => clinico ? '<button class="btn sm" data-prog="' + esc(e.id) + '">Programar</button>' : '' }
           ], sinProgramar, {})
         : '');
@@ -386,7 +386,7 @@
     const colsGestion = [
       { t: 'Caso', k: 'id' },
       { t: 'Colaborador', v: c => nombreDe(c.empleado) },
-      { t: 'Área', v: c => empDe(c.empleado).area },
+      { t: 'Departamento', v: c => empDe(c.empleado).departamento },
       { t: 'Turno', v: c => empDe(c.empleado).turno },
       { t: 'Detección', v: c => fmt(c.fechaDeteccion) },
       { t: 'Días abierto', v: c => c.fechaCierre ? diffDias(c.fechaDeteccion, c.fechaCierre) : diffDias(c.fechaDeteccion, hoyISO()) },
@@ -444,7 +444,7 @@
         '<div class="flow-tx"><b>' + esc(f.n) + '</b></div></div>').join('');
 
     main.innerHTML =
-      cab('Caso ' + c.id, nombreDe(c.empleado) + ' · ' + (e.puesto || '') + ' · ' + (e.area || '') + ' · turno ' + (e.turno || '—'),
+      cab('Caso ' + c.id, nombreDe(c.empleado) + ' · ' + (e.puesto || '') + ' · ' + (e.departamento || '') + ' · turno ' + (e.turno || '—'),
           (clinico && !cerrado ? '<button class="btn" id="avanzar">Registrar seguimiento</button>' : '') +
           (clinico && !cerrado ? '<button class="btn ok" id="alta">Alta / cierre</button>' : '') +
           '<button class="btn gh" id="volver">← Volver</button>') +
@@ -456,7 +456,7 @@
       '<div class="grid g2">' +
         '<div class="card"><div class="card-t">Identificación</div><div class="frow">' +
           ro('Número de empleado', e.id) + ro('Nombre', e.nombre) + ro('Puesto', e.puesto) +
-          ro('Área', e.area) + ro('Turno', e.turno) + ro('Fecha de ingreso', fmt(e.ingreso)) +
+          ro('Departamento', e.departamento) + ro('Turno', e.turno) + ro('Fecha de ingreso', fmt(e.ingreso)) +
         '</div></div>' +
         '<div class="card"><div class="card-t">Origen del caso</div><div class="frow">' +
           ro('Fecha de detección', fmt(c.fechaDeteccion)) +
@@ -521,7 +521,7 @@
         txtL('estudiosS', 'Estudios o valoraciones posteriores', c.estudiosPosteriores) +
         txtL('restriccionS', 'Restricción laboral derivada (la ve Seguridad Industrial)', c.restriccion) +
         '<p class="hint" style="font-size:11px;color:var(--tx3)">La restricción es lo único de este caso que verán ' +
-        'Seguridad Industrial y el jefe del área: descríbela como medida operativa, sin la causa clínica.</p>',
+        'Seguridad Industrial y el jefe del departamento: descríbela como medida operativa, sin la causa clínica.</p>',
       botones: [
         { txt: 'Cancelar', clase: 'gh' },
         { txt: 'Guardar', accion: async (b) => {
@@ -600,16 +600,16 @@
     const diasCierre = cerrados.map(c => diffDias(c.fechaDeteccion, c.fechaCierre));
     const promCierre = diasCierre.length ? Math.round(diasCierre.reduce((x, y) => x + y, 0) / diasCierre.length) : null;
 
-    /* Corte por área: sólo conteos, nunca resultados individuales */
+    /* Corte por departamento: sólo conteos, nunca resultados individuales */
     const areas = {};
     a.forEach(e => {
-      const kk = e.area || '—';
-      if (!areas[kk]) areas[kk] = { area: kk, personas: 0, evaluados: 0, casos: 0, abiertos: 0 };
+      const kk = e.departamento || '—';
+      if (!areas[kk]) areas[kk] = { departamento: kk, personas: 0, evaluados: 0, casos: 0, abiertos: 0 };
       areas[kk].personas++;
       if (evaluados.has(e.id)) areas[kk].evaluados++;
     });
     D.casos.forEach(c => {
-      const e = empDe(c.empleado); const kk = e.area || '—';
+      const e = empDe(c.empleado); const kk = e.departamento || '—';
       if (!areas[kk]) return;
       areas[kk].casos++;
       if (c.estatus !== 'alta_cierre' && c.estatus !== 'no_requiere') areas[kk].abiertos++;
@@ -621,14 +621,14 @@
     }).sort((x, y) => x.cobertura - y.cobertura);
 
     const cols = [
-      { t: 'Área', k: 'area' }, { t: 'Colaboradores', k: 'personas' }, { t: 'Evaluados', k: 'evaluados' },
+      { t: 'Departamento', k: 'departamento' }, { t: 'Colaboradores', k: 'personas' }, { t: 'Evaluados', k: 'evaluados' },
       { t: 'Cobertura', v: g => g.cobertura + '%' }, { t: 'Casos', k: 'casos' }, { t: 'Casos abiertos', k: 'abiertos' }
     ];
 
     main.innerHTML =
       cab('Reporte de gestión — Etapa 1', 'Corte al ' + fmtLargo(hoyISO()),
           '<button class="btn gh" id="csv">⬇ CSV</button><button class="btn gh" id="print">🖨️ Imprimir</button>') +
-      '<div class="priv">📊 <div><b>Reporte agregado.</b> Contiene conteos y tiempos por área, sin resultados ni ' +
+      '<div class="priv">📊 <div><b>Reporte agregado.</b> Contiene conteos y tiempos por departamento, sin resultados ni ' +
       'diagnósticos individuales. Es el entregable de gestión previsto para la Etapa 1.</div></div>' +
       '<div class="grid g4">' +
         k('Cobertura de evaluación', Math.round(evaluados.size / Math.max(1, a.length) * 100) + '%',
@@ -641,15 +641,15 @@
         k('Días promedio a cierre', promCierre == null ? '—' : promCierre,
           'Desde la detección hasta el alta', promCierre != null && promCierre > 45 ? 'dn' : 'gn') +
       '</div>' +
-      '<h2 class="sec-t">Cobertura y casos por área</h2>' +
+      '<h2 class="sec-t">Cobertura y casos por departamento</h2>' +
       tabla(cols, filasArea, { vacio: 'Sin datos.' }) +
       '<h2 class="sec-t">Casos por estatus</h2>' +
       tabla([
         { t: 'Estatus', v: e => e.n }, { t: 'Casos', v: e => e.total },
         { t: '% del total', v: e => D.casos.length ? Math.round(e.total / D.casos.length * 100) + '%' : '0%' }
       ], CAT.estatusCaso.map(e => ({ n: e.n, total: D.casos.filter(c => c.estatus === e.c).length })), {}) +
-      '<div class="nota"><b>Cómo leer este reporte.</b> La cobertura mide avance del programa, no salud: un área con 100% ' +
-      'de cobertura y varias desviaciones está mejor controlada que una con 40% de cobertura y ninguna. En áreas con pocos ' +
+      '<div class="nota"><b>Cómo leer este reporte.</b> La cobertura mide avance del programa, no salud: un departamento con 100% ' +
+      'de cobertura y varias desviaciones está mejor controlada que uno con 40% de cobertura y ninguna. En departamentos con pocos ' +
       'colaboradores, evita difundir el conteo de casos: puede identificar a una persona.</div>';
 
     ZX.pie(main, 'Fuente: programación, resultados validados y casos de seguimiento del propio portal. Sin captura manual paralela.');

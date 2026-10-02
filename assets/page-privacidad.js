@@ -183,7 +183,7 @@
         ) +
       '</div>' +
       '<div class="card"><div class="card-t">Sin consentimiento vigente</div>' +
-        ZX.tabla([{ t: 'Colaborador', v: e => e.nombre }, { t: 'Departamento', v: e => e.depto }],
+        ZX.tabla([{ t: 'Colaborador', v: e => e.nombre }, { t: 'Dirección', v: e => e.direccion }],
           sinConsentimiento, { vacio: 'Todos tienen consentimiento vigente.' }) +
       '</div>' +
       '<div class="card"><div class="card-t">Solicitudes ARCO</div>' +
