@@ -4,7 +4,7 @@ Aplicación web interna de Zubex Industrial: expediente médico ocupacional, **E
 Médico Electrónico ZX** (análisis clínicos bajo lineamiento SQF), citas, vacaciones y banco de horas,
 y gestión documental de RRHH, con permisos distintos por nivel y por perfil.
 
-**Versión 2.2.0 · Equipo RMNC · Octubre 2026**
+**Versión 2.2.1 · Equipo RMNC · Octubre 2026**
 
 > **Trabaja únicamente con Supabase.** Ya no existe el modo demo ni ningún dato de ejemplo en el
 > código: todo lo que se ve viene de la base de datos real (proyecto `RRHH`). Las pruebas se hacen
@@ -12,6 +12,12 @@ y gestión documental de RRHH, con permisos distintos por nivel y por perfil.
 
 ## Qué hay de nuevo
 
+- **2.2.1** — **Vista previa por tipo de usuario** (sólo Administrador): lista *Ver como* en la barra superior con los
+  niveles (Empleado, Coordinador, Jefe / Gerente) y los perfiles (Salud Ocupacional, Seguridad Industrial, Recursos Humanos,
+  Dirección y los que se creen). Cambia lo que la pantalla muestra —menús, secciones, pestañas y botones—, no la identidad:
+  los datos siguen llegando con la sesión y los permisos reales del administrador, así que sirve para validar qué
+  opciones ve cada tipo, no qué datos le devuelve la base. No entra a cuentas ajenas (entrar como Médico daría acceso a datos
+  clínicos). Se muestra un aviso mientras está activa y termina al cerrar sesión.
 - **2.2.0** — **Calendario** (pantalla aparte, sólo con sesión): vacaciones por semana con barras continuas y banco de
   horas por día, que se actualizan al instante cuando se aprueba una solicitud. **Barra superior** con cuatro accesos
   (Vacaciones, Banco de horas, Cita médica, Calendario). **Citas** pasó a *Servicio médico* y se agenda en un popup con
@@ -237,6 +243,9 @@ expediente clínico.
 - Se abre también con el botón **Cita médica** de la barra superior (`medico.html#cita`).
 
 ### 3.9 Vacaciones y horas · Calendario · barra superior
+- **Vista previa por tipo de usuario** (sólo Administrador): *Ver como* en la barra superior. Implementación en `app.js`
+  (`sesionEfectiva()`): sólo cambia el nivel y el perfil que usa la interfaz para decidir qué mostrar; las peticiones a la base
+  no cambian. Sólo se aplica si la sesión real es de Administrador; si otra persona fuerza la clave en el navegador, se ignora y se borra.
 - **Barra superior:** *Vacaciones · Banco de horas · Cita médica · Calendario*. Las tres primeras abren directamente el
   formulario (enlaces `vacaciones.html#solicitar-vacaciones`, `#solicitar-banco`, `medico.html#cita`); en pantallas angostas
   se agrupan en un menú. Las tarjetas del inicio usan los mismos enlaces (y `#pendientes-vacaciones` / `#pendientes-banco`).

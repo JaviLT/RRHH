@@ -6,7 +6,7 @@
   'use strict';
 
   const API = global.ZX_API;
-  const VERSION = '2.2.0';
+  const VERSION = '2.2.1';
 
   /* ---------------- Tipografía de marca ----------------
      El manual de marca pide Poppins con fallback a Segoe UI. Cargarla con un
@@ -107,6 +107,53 @@
   const esRRHH = (persona) => (persona || {}).perfil === 'rrhh';
   const esVigilancia = (persona) => (persona || {}).perfil === 'vigilancia';
   const esAdmin = (persona) => (persona || {}).perfil === 'admin';
+
+  /* ---------------- Vista previa por tipo de usuario (sólo Administración) ----------------
+     Una persona con perfil Administrador puede "ver el portal como" otro nivel (Empleado, Coordinador,
+     Jefe/Gerente) o perfil (Salud Ocupacional, RRHH...) para comprobar qué menús, secciones y opciones
+     le aparecen a cada tipo, sin entrar y salir de cuentas.
+     ALCANCE: cambia únicamente lo que la pantalla MUESTRA (menús, módulos, pestañas, botones). La
+     identidad real no cambia: las peticiones a la base siguen yendo con la sesión y los permisos reales
+     del administrador, así que los datos que llegan NO son los de ese tipo de usuario. Tampoco se entra
+     a ninguna cuenta ajena: hacerlo daría acceso a datos de otras personas (en el caso del médico, a
+     datos clínicos). Sólo se aplica si la sesión real es de Administrador. */
+  const VISTA_KEY = 'zx_vista_como';
+  function leerVista() { try { return JSON.parse(sessionStorage.getItem(VISTA_KEY) || 'null'); } catch (e) { return null; } }
+  function setVista(clave) {
+    if (!clave || clave === 'real') { sessionStorage.removeItem(VISTA_KEY); return; }
+    const tipo = clave.slice(0, 1), id = clave.slice(2);
+    const nivel = tipo === 'n' ? id : 'empleado', perfil = tipo === 'p' ? id : 'ninguno';
+    const etiqueta = tipo === 'n' ? NIVEL_NOMBRE(id) : PERFIL_NOMBRE(id);
+    sessionStorage.setItem(VISTA_KEY, JSON.stringify({ clave, nivel, perfil, etiqueta }));
+  }
+  /* La sesión que usa la interfaz para decidir qué mostrar: la real, o la de la vista previa. */
+  function sesionEfectiva() {
+    const s = API.sesionActual();
+    if (!s) return s;
+    const v = leerVista();
+    if (!v) return s;
+    if (!esAdmin(s)) { sessionStorage.removeItem(VISTA_KEY); return s; }
+    return Object.assign({}, s, { nivel: v.nivel, perfil: v.perfil, vistaComo: v.etiqueta });
+  }
+  function selectorVista(real) {
+    if (!esAdmin(real)) return '';
+    const v = leerVista(), actual = v ? v.clave : 'real';
+    const niveles = Object.keys((global.ZX_CAT && ZX_CAT.NIVELES) || {}).map(n => ['n:' + n, NIVEL_NOMBRE(n)]);
+    const perfiles = (API.perfilesSync ? API.perfilesSync() : []).filter(p => p.id !== 'ninguno' && p.id !== 'admin').map(p => ['p:' + p.id, p.nombre]);
+    const op = (par) => '<option value="' + esc(par[0]) + '"' + (par[0] === actual ? ' selected' : '') + '>' + esc(par[1]) + '</option>';
+    return '<label class="tb-ver" title="Ver el portal como otro tipo de usuario (sólo cambia lo que se muestra)"><span>👁 Ver como</span>' +
+      '<select id="zx-vista" aria-label="Ver como">' +
+        '<option value="real"' + (actual === 'real' ? ' selected' : '') + '>Administrador (mi vista)</option>' +
+        '<optgroup label="Por nivel">' + niveles.map(op).join('') + '</optgroup>' +
+        '<optgroup label="Por perfil">' + perfiles.map(op).join('') + '</optgroup>' +
+      '</select></label>';
+  }
+  function bannerVista(s, real) {
+    return '<div class="vista-banner" role="status">👁 <div><b>Vista previa como «' + esc(s.vistaComo) + '».</b> ' +
+      'Ves los menús, secciones y botones que le aparecen a ese tipo de usuario. Los <b>datos</b> que se cargan siguen siendo los de tu cuenta (' +
+      esc(real.id) + ') y tus permisos reales, así que sirve para validar qué opciones ve, no qué información le devuelve la base.</div>' +
+      '<button class="btn sm" id="zx-vista-fin">Volver a mi vista</button></div>';
+  }
 
   /* Nota de conservación documental — se muestra donde hay documentos o bajas.
      Las dos normas conviven con plazos distintos; la política definitiva la
@@ -333,7 +380,7 @@
   }
 
   function requiereSesion(moduloId) {
-    const s = API.sesionActual();
+    const s = sesionEfectiva();
     if (!s) { location.replace('index.html'); return null; }
     if (moduloId && !puede(s, moduloId)) {
       const mod = MODULOS.find(m => m.id === moduloId) || {};
@@ -347,7 +394,10 @@
           (desactivado
             ? 'El módulo <b>' + esc(mod.nombre || moduloId) + '</b> está desactivado en esta versión del portal.'
             : 'Tu acceso (' + esc(ACCESO_TEXTO(s)) + ') no tiene permiso para <b>' + esc(mod.nombre || moduloId) + '</b>.') +
-        '</p><p style="margin-top:18px"><a href="index.html">Volver al inicio</a></p></div>';
+        '</p><p style="margin-top:18px"><a href="index.html">Volver al inicio</a>' +
+        (s.vistaComo ? ' · <a href="#" id="zx-fin-vista">Volver a mi vista de Administración</a>' : '') + '</p></div>';
+      const fin = document.getElementById('zx-fin-vista');
+      if (fin) fin.addEventListener('click', ev => { ev.preventDefault(); setVista('real'); location.reload(); });
       return null;
     }
     return s;
@@ -370,8 +420,9 @@
   }
 
   function montarShell(activo, subtitulo, navItems) {
-    const s = API.sesionActual();
+    const s = sesionEfectiva();
     if (!s) return null;
+    const real = API.sesionActual();
     const app = document.createElement('div');
     app.className = 'app';
 
@@ -399,6 +450,7 @@
         '</span></div>' +
         navSuperior(activo) +
         '<div class="tb-right">' +
+          selectorVista(real) +
           '<button class="theme-btn" id="zx-tema" aria-label="Cambiar tema"></button>' +
           '<div class="tb-user"><b>' + esc(s.nombre) + '</b><span title="' + esc([s.puesto, s.departamento].filter(Boolean).join(' · ')) + '">' +
             esc([s.puesto, s.departamento].filter(Boolean).join(' · ')) + '</span></div>' +
@@ -406,6 +458,7 @@
           '<button class="btn-logout" id="zx-salir">Salir</button>' +
         '</div>' +
       '</header>' +
+      (s.vistaComo ? bannerVista(s, real) : '') +
       '<div class="layout">' +
         '<aside class="sidebar" id="zx-sb">' +
           '<div class="sb-top"><button class="sb-toggle" id="zx-tg" aria-label="Colapsar menú">☰</button></div>' +
@@ -418,6 +471,8 @@
     document.body.innerHTML = '';
     document.body.appendChild(app);
     $('#zx-tema').addEventListener('click', alternarTema);
+    const sv = $('#zx-vista'); if (sv) sv.addEventListener('change', () => { setVista(sv.value); location.reload(); });
+    const fv = $('#zx-vista-fin'); if (fv) fv.addEventListener('click', () => { setVista('real'); location.reload(); });
     $('#zx-salir').addEventListener('click', () => { API.cerrarSesion(); location.replace('index.html'); });
     $('#zx-tg').addEventListener('click', () => $('#zx-sb').classList.toggle('col'));
     return { main: $('#zx-main'), sesion: s };

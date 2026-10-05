@@ -320,7 +320,7 @@ tbody tr:hover{background:var(--c1)}
 .tb-menu .tb-op{color:var(--tx);opacity:1}
 .tb-menu .tb-op:hover{background:var(--c2)}
 .tb-menu .tb-op.on{background:var(--zx-soft);color:var(--zx)}
-@media(max-width:1180px){.tb-nav{display:none}.tb-more{display:block}}
+@media(max-width:1360px){.tb-nav{display:none}.tb-more{display:block}}
 
 /* ---- Calendarios de selección (formularios): números legibles en modo noche ---- */
 [data-theme=dark] .cal-d{color:#fff}
@@ -381,3 +381,20 @@ a.kpi-link .kpi-d::after{content:" →";opacity:.6}
 
 /* Calendarios dentro de popups: celdas más bajas para que el formulario completo quepa sin desplazarse */
 .modal .cal-d{aspect-ratio:auto;height:38px}
+
+
+/* ---- Vista previa por tipo de usuario (Administración) ---- */
+.tb-ver{display:flex;align-items:center;gap:6px;color:#fff;font-size:11.5px;font-weight:600;white-space:nowrap}
+.tb-ver select{min-width:150px;background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.35);border-radius:8px;
+  padding:6px 8px;font-size:12px;font-weight:600;max-width:190px;cursor:pointer}
+.tb-ver select option,.tb-ver select optgroup{color:#111;background:#fff}
+@media(max-width:1180px){.tb-ver span{display:none}}
+.vista-banner{display:flex;align-items:center;gap:12px;background:#fff4d6;color:#5b3d00;border-bottom:1px solid #f0d58a;
+  padding:8px 18px;font-size:12.5px;line-height:1.4;flex-shrink:0}
+.vista-banner>div{flex:1}
+[data-theme=dark] .vista-banner{background:#3a2e0e;color:#ffe3a1;border-bottom-color:#6b5517}
+
+/* Barra superior: el logo no se parte y el nombre largo se recorta con puntos suspensivos */
+.zx-logo{flex-shrink:0;white-space:nowrap}
+.tb-user{min-width:0;max-width:280px}
+.tb-user b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
