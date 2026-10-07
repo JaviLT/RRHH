@@ -1,5 +1,5 @@
 /* ============================================================
-   Portal Zubex — Aviso de privacidad, consentimiento y ARCO
+   Portal RRHH — Aviso de privacidad, consentimiento y ARCO
    ------------------------------------------------------------
    En el consentimiento, la regla real es un disparador de PostgreSQL
    (exigir_consentimiento en historias_clinicas): sin consentimiento vigente la
@@ -183,7 +183,7 @@
         ) +
       '</div>' +
       '<div class="card"><div class="card-t">Sin consentimiento vigente</div>' +
-        ZX.tabla([{ t: 'Colaborador', v: e => e.nombre }, { t: 'Dirección', v: e => e.direccion }],
+        ZX.tabla([{ t: 'Colaborador', v: e => e.nombre }, { t: 'Departamento', v: e => e.departamento }],
           sinConsentimiento, { vacio: 'Todos tienen consentimiento vigente.' }) +
       '</div>' +
       '<div class="card"><div class="card-t">Solicitudes ARCO</div>' +

@@ -1,5 +1,5 @@
 /* ============================================================
-   Portal Zubex — Configuración de conexión
+   Portal RRHH — Configuración de conexión
    ------------------------------------------------------------
    `supabaseKey` es la llave PÚBLICA (publishable/anon). Está diseñada
    para ir en el navegador — no es un secreto. La seguridad real la da

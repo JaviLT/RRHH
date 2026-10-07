@@ -1,5 +1,5 @@
 /* ============================================================
-   Portal Zubex — ETAPA 1 · Análisis clínicos (SQF)
+   Portal RRHH — ETAPA 1 · Análisis clínicos (SQF)
    ------------------------------------------------------------
    Alcance del documento "Expediente Médico Electrónico ZX v3":
    registro y consulta de resultados, identificación de
@@ -29,12 +29,10 @@
        { id: 'programa',  nombre: 'Programación',       ico: '🗓️' },
        { id: 'resultados',nombre: 'Resultados',         ico: '🧾' },
        { id: 'validar',   nombre: 'Por validar',        ico: '✔️' },
-       { id: 'casos',     nombre: 'Casos de seguimiento', ico: '🔬' },
-       { id: 'reporte',   nombre: 'Reporte de gestión', ico: '📤' }]
+       { id: 'casos',     nombre: 'Casos de seguimiento', ico: '🔬' }]
     : [{ id: 'tablero',   nombre: 'Tablero Etapa 1',    ico: '📊' },
        { id: 'programa',  nombre: 'Programación',       ico: '🗓️' },
-       { id: 'casos',     nombre: 'Estatus de casos',   ico: '🔬' },
-       { id: 'reporte',   nombre: 'Reporte de gestión', ico: '📤' }];
+       { id: 'casos',     nombre: 'Estatus de casos',   ico: '🔬' }];
 
   const shell = ZX.montarShell('analisis', 'Etapa 1 · Control y seguimiento de análisis clínicos', vistas);
   const main = shell.main;
@@ -54,7 +52,7 @@
   async function refrescar() { await recargar(); render(); }
   function render() {
     if (casoSel) return fichaCaso(casoSel);
-    ({ tablero, programa, resultados, validar, casos: listaCasos, reporte }[vista] || tablero)();
+    ({ tablero, programa, resultados, validar, casos: listaCasos }[vista] || tablero)();
   }
 
   const empDe = id => D.emps.find(e => e.id === id) || {};
@@ -93,17 +91,13 @@
     main.innerHTML =
       cab('Tablero Etapa 1', 'Control y seguimiento de resultados de análisis clínicos · lineamiento SQF') +
       (clinico ? '' : AVISO_GESTION) +
+      (ZX.puede(sesion, 'indicadores') ? '<div class="nota" style="margin-bottom:12px">Cobertura, desviaciones, casos cerrados y el reporte por departamento están ahora en <a href="indicadores.html">Indicadores → Etapa 1 · Análisis</a>.</div>' : '') +
       '<div class="grid g4">' +
-        k('Evaluados', evaluados.size, 'De ' + a.length + ' colaboradores activos') +
         k('Pendientes de evaluar', pendientes.length, vencidos.length ? vencidos.length + ' ya vencidos' : 'Dentro de fecha',
           vencidos.length ? 'dn' : pendientes.length ? 'wn' : 'gn') +
-        k('Desviaciones', desviaciones.length, 'Resultados fuera de criterio', desviaciones.length ? 'wn' : 'gn') +
         k('Casos abiertos', abiertos.length, 'En algún estatus de seguimiento', abiertos.length ? 'wn' : 'gn') +
-        k('Casos cerrados', cerrados.length, 'Con alta médica', 'gn') +
         k('Valoraciones vencidas', vencidasVal.length, 'Fecha de control ya pasada', vencidasVal.length ? 'dn' : 'gn') +
         (clinico ? k('Por validar', porValidar.length, 'Resultados esperando validación médica', porValidar.length ? 'wn' : 'gn') : '') +
-        k('Cobertura', Math.round(evaluados.size / Math.max(1, a.length) * 100) + '%', 'Plantilla activa evaluada',
-          (evaluados.size / Math.max(1, a.length)) >= 0.9 ? 'gn' : 'wn') +
       '</div>' +
 
       '<h2 class="sec-t">Casos por estatus</h2>' +
@@ -588,73 +582,6 @@
           } }
       ]
     });
-  }
-
-  /* ===================== REPORTE DE GESTIÓN ===================== */
-  function reporte() {
-    const a = activos();
-    const evaluados = new Set(D.prog.filter(p => p.estado === 'realizado').map(p => p.empleado));
-    const desviaciones = D.res.filter(r => r.valoracion === 'desviacion');
-    const validados = D.res.filter(r => r.valoracion !== 'pendiente_validacion');
-    const cerrados = D.casos.filter(c => c.estatus === 'alta_cierre');
-    const diasCierre = cerrados.map(c => diffDias(c.fechaDeteccion, c.fechaCierre));
-    const promCierre = diasCierre.length ? Math.round(diasCierre.reduce((x, y) => x + y, 0) / diasCierre.length) : null;
-
-    /* Corte por departamento: sólo conteos, nunca resultados individuales */
-    const areas = {};
-    a.forEach(e => {
-      const kk = e.departamento || '—';
-      if (!areas[kk]) areas[kk] = { departamento: kk, personas: 0, evaluados: 0, casos: 0, abiertos: 0 };
-      areas[kk].personas++;
-      if (evaluados.has(e.id)) areas[kk].evaluados++;
-    });
-    D.casos.forEach(c => {
-      const e = empDe(c.empleado); const kk = e.departamento || '—';
-      if (!areas[kk]) return;
-      areas[kk].casos++;
-      if (c.estatus !== 'alta_cierre' && c.estatus !== 'no_requiere') areas[kk].abiertos++;
-    });
-    const filasArea = Object.keys(areas).map(kk => {
-      const g = areas[kk];
-      g.cobertura = g.personas ? Math.round(g.evaluados / g.personas * 100) : 0;
-      return g;
-    }).sort((x, y) => x.cobertura - y.cobertura);
-
-    const cols = [
-      { t: 'Departamento', k: 'departamento' }, { t: 'Colaboradores', k: 'personas' }, { t: 'Evaluados', k: 'evaluados' },
-      { t: 'Cobertura', v: g => g.cobertura + '%' }, { t: 'Casos', k: 'casos' }, { t: 'Casos abiertos', k: 'abiertos' }
-    ];
-
-    main.innerHTML =
-      cab('Reporte de gestión — Etapa 1', 'Corte al ' + fmtLargo(hoyISO()),
-          '<button class="btn gh" id="csv">⬇ CSV</button><button class="btn gh" id="print">🖨️ Imprimir</button>') +
-      '<div class="priv">📊 <div><b>Reporte agregado.</b> Contiene conteos y tiempos por departamento, sin resultados ni ' +
-      'diagnósticos individuales. Es el entregable de gestión previsto para la Etapa 1.</div></div>' +
-      '<div class="grid g4">' +
-        k('Cobertura de evaluación', Math.round(evaluados.size / Math.max(1, a.length) * 100) + '%',
-          evaluados.size + ' de ' + a.length + ' colaboradores') +
-        k('Tasa de desviación', validados.length ? Math.round(desviaciones.length / validados.length * 100) + '%' : '—',
-          desviaciones.length + ' de ' + validados.length + ' resultados validados',
-          desviaciones.length ? 'wn' : 'gn') +
-        k('Casos cerrados', cerrados.length + ' de ' + D.casos.length,
-          D.casos.length ? Math.round(cerrados.length / D.casos.length * 100) + '% del total' : 'Sin casos', 'gn') +
-        k('Días promedio a cierre', promCierre == null ? '—' : promCierre,
-          'Desde la detección hasta el alta', promCierre != null && promCierre > 45 ? 'dn' : 'gn') +
-      '</div>' +
-      '<h2 class="sec-t">Cobertura y casos por departamento</h2>' +
-      tabla(cols, filasArea, { vacio: 'Sin datos.' }) +
-      '<h2 class="sec-t">Casos por estatus</h2>' +
-      tabla([
-        { t: 'Estatus', v: e => e.n }, { t: 'Casos', v: e => e.total },
-        { t: '% del total', v: e => D.casos.length ? Math.round(e.total / D.casos.length * 100) + '%' : '0%' }
-      ], CAT.estatusCaso.map(e => ({ n: e.n, total: D.casos.filter(c => c.estatus === e.c).length })), {}) +
-      '<div class="nota"><b>Cómo leer este reporte.</b> La cobertura mide avance del programa, no salud: un departamento con 100% ' +
-      'de cobertura y varias desviaciones está mejor controlada que uno con 40% de cobertura y ninguna. En departamentos con pocos ' +
-      'colaboradores, evita difundir el conteo de casos: puede identificar a una persona.</div>';
-
-    ZX.pie(main, 'Fuente: programación, resultados validados y casos de seguimiento del propio portal. Sin captura manual paralela.');
-    $('#csv').addEventListener('click', () => descargarCSV('Reporte_Etapa1_' + hoyISO() + '.csv', cols, filasArea));
-    $('#print').addEventListener('click', () => window.print());
   }
 
   /* ===================== helpers ===================== */

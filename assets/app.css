@@ -1,5 +1,5 @@
 /* ============================================================
-   Portal Zubex — Sistema de diseño
+   Portal RRHH — Sistema de diseño
    Manual de Estandarización de Reportes IA — Zubex Industrial
    Azul primario #0D18A8 · Azul acento #227EF6
    ============================================================ */
@@ -398,3 +398,14 @@ a.kpi-link .kpi-d::after{content:" →";opacity:.6}
 .zx-logo{flex-shrink:0;white-space:nowrap}
 .tb-user{min-width:0;max-width:280px}
 .tb-user b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+
+/* ---- Barra superior: los cuatro accesos se ven como botones ---- */
+.tb-nav{gap:8px}
+.tb-op{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.34);font-family:inherit;font-size:12.5px;font-weight:600;
+  cursor:pointer;opacity:1;text-decoration:none;box-shadow:0 1px 0 rgba(0,0,0,.14);transition:background .15s,border-color .15s}
+.tb-op:hover{background:rgba(255,255,255,.26);border-color:rgba(255,255,255,.65)}
+.tb-op:active{transform:translateY(1px);box-shadow:none}
+.tb-op.on{background:#fff;color:var(--zx);border-color:#fff}
+.tb-menu .tb-op{background:transparent;border:1px solid transparent;box-shadow:none;width:100%;text-align:left;color:var(--tx)}
+.tb-menu .tb-op:hover{background:var(--c2);border-color:transparent}

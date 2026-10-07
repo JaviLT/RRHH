@@ -1,5 +1,5 @@
 /* ============================================================
-   Portal Zubex — Catálogos de negocio (listas fijas)
+   Portal RRHH — Catálogos de negocio (listas fijas)
    ------------------------------------------------------------
    Opciones de los formularios y reglas que no cambian con los datos:
    niveles jerárquicos, tipos de riesgo y de incapacidad, dictámenes,
@@ -17,11 +17,8 @@
       "empleado": {
         "nombre": "Empleado"
       },
-      "coordinador": {
-        "nombre": "Coordinador"
-      },
-      "supervisor": {
-        "nombre": "Jefe / Gerente"
+      "jefe": {
+        "nombre": "Jefe"
       }
     },
     "consumo": [

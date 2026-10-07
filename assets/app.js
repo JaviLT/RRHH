@@ -1,12 +1,12 @@
 /* ============================================================
-   Portal Zubex — Shell común (sesión, permisos, UI)
+   Portal RRHH — Shell común (sesión, permisos, UI)
    Se carga en TODAS las páginas del portal.
    ============================================================ */
 (function (global) {
   'use strict';
 
   const API = global.ZX_API;
-  const VERSION = '2.2.1';
+  const VERSION = '2.4.0';
 
   /* ---------------- Tipografía de marca ----------------
      El manual de marca pide Poppins con fallback a Segoe UI. Cargarla con un
@@ -54,9 +54,9 @@
       desc: 'Etapa 1 · SQF: resultados de los análisis anuales, desviaciones y seguimiento médico hasta el alta.' },
     /* Aptitud es el único módulo con DOS caminos de acceso: por perfil
        (medico/vigilancia → planta completa) o por nivel (nivelExtra:
-       'supervisor' → sólo el equipo propio). Ver puede() y soloEquipo en
+       'jefe' → sólo el equipo propio). Ver puede() y soloEquipo en
        page-aptitud.js. */
-    { id: 'aptitud',    nombre: 'Aptitud y restricciones', ico: '🦺', url: 'aptitud.html', nivelExtra: 'supervisor',
+    { id: 'aptitud',    nombre: 'Aptitud y restricciones', ico: '🦺', url: 'aptitud.html', nivelExtra: 'jefe',
       desc: 'Aptitud laboral, restricciones y recomendaciones por puesto. Sin información clínica.' },
     { id: 'indicadores', nombre: 'Indicadores',      ico: '📈', url: 'indicadores.html',
       desc: 'Tablero de salud ocupacional con datos agregados, sin datos clínicos individuales.' },
@@ -102,15 +102,14 @@
     const n = NIVEL_NOMBRE(persona.nivel);
     return (persona.perfil && persona.perfil !== 'ninguno') ? n + ' · ' + PERFIL_NOMBRE(persona.perfil) : n;
   };
-  const esAprobador = (persona) => ['coordinador', 'supervisor'].indexOf((persona || {}).nivel) >= 0;
+  const esAprobador = (persona) => (persona || {}).nivel === 'jefe';
   const esClinico = (persona) => (persona || {}).perfil === 'medico';
   const esRRHH = (persona) => (persona || {}).perfil === 'rrhh';
   const esVigilancia = (persona) => (persona || {}).perfil === 'vigilancia';
   const esAdmin = (persona) => (persona || {}).perfil === 'admin';
 
   /* ---------------- Vista previa por tipo de usuario (sólo Administración) ----------------
-     Una persona con perfil Administrador puede "ver el portal como" otro nivel (Empleado, Coordinador,
-     Jefe/Gerente) o perfil (Salud Ocupacional, RRHH...) para comprobar qué menús, secciones y opciones
+     Una persona con perfil Administrador puede "ver el portal como" otro nivel (Empleado, Jefe) o perfil (Salud Ocupacional, RRHH...) para comprobar qué menús, secciones y opciones
      le aparecen a cada tipo, sin entrar y salir de cuentas.
      ALCANCE: cambia únicamente lo que la pantalla MUESTRA (menús, módulos, pestañas, botones). La
      identidad real no cambia: las peticiones a la base siguen yendo con la sesión y los permisos reales
@@ -403,17 +402,20 @@
     return s;
   }
 
-  /* Opciones de la barra superior, en este orden. Las tres primeras abren directamente el
-     formulario (o el calendario). En pantallas angostas se agrupan en un menú desplegable. */
+  /* Opciones de la barra superior, en este orden. Vacaciones, Banco de horas y Cita médica abren su
+     FORMULARIO en el lugar (sin cambiar de página; lo trae formularios.js); Calendario abre su página.
+     En pantallas angostas se agrupan en un menú desplegable. */
   const NAV_SUPERIOR = [
-    { id: 'vacaciones', txt: 'Vacaciones',     ico: '🌴', url: 'vacaciones.html#solicitar-vacaciones' },
-    { id: 'banco',      txt: 'Banco de horas', ico: '⏱️', url: 'vacaciones.html#solicitar-banco' },
-    { id: 'cita',       txt: 'Cita médica',    ico: '🩺', url: 'medico.html#cita' },
+    { id: 'vacaciones', txt: 'Vacaciones',     ico: '🌴', form: 'vacaciones', url: 'vacaciones.html#solicitar-vacaciones' },
+    { id: 'banco',      txt: 'Banco de horas', ico: '⏱️', form: 'banco',      url: 'vacaciones.html#solicitar-banco' },
+    { id: 'cita',       txt: 'Cita médica',    ico: '🩺', form: 'cita',       url: 'medico.html#cita' },
     { id: 'calendario', txt: 'Calendario',     ico: '📆', url: 'calendario.html' }
   ];
   function navSuperior(activo) {
-    const liga = (n, clase) => '<a class="' + clase + (n.id === activo ? ' on' : '') + '" href="' + esc(n.url) + '">' +
-      '<span class="tb-ico">' + n.ico + '</span><span>' + esc(n.txt) + '</span></a>';
+    const interior = n => '<span class="tb-ico">' + n.ico + '</span><span>' + esc(n.txt) + '</span>';
+    const liga = (n, clase) => n.form
+      ? '<button type="button" class="' + clase + '" data-form="' + n.form + '">' + interior(n) + '</button>'
+      : '<a class="' + clase + (n.id === activo ? ' on' : '') + '" href="' + esc(n.url) + '">' + interior(n) + '</a>';
     return '<nav class="tb-nav" aria-label="Accesos rápidos">' + NAV_SUPERIOR.map(n => liga(n, 'tb-op')).join('') + '</nav>' +
       '<details class="tb-more"><summary aria-label="Accesos rápidos">☰ Solicitar</summary>' +
         '<div class="tb-menu">' + NAV_SUPERIOR.map(n => liga(n, 'tb-op')).join('') + '</div></details>';
@@ -445,9 +447,7 @@
 
     app.innerHTML =
       '<header class="topbar">' +
-        '<div class="zx-logo"><span class="zx-mark">ZX</span><span>Portal Zubex' +
-          (subtitulo ? '<span class="tb-title" style="display:block">' + esc(subtitulo) + '</span>' : '') +
-        '</span></div>' +
+        '<div class="zx-logo"><span class="zx-mark">ZX</span><span>Portal RRHH</span></div>' +
         navSuperior(activo) +
         '<div class="tb-right">' +
           selectorVista(real) +
@@ -471,6 +471,11 @@
     document.body.innerHTML = '';
     document.body.appendChild(app);
     $('#zx-tema').addEventListener('click', alternarTema);
+    document.querySelectorAll('[data-form]').forEach(b => b.addEventListener('click', () => {      // formularios de la barra superior
+      const menu = b.closest('details'); if (menu) menu.removeAttribute('open');
+      const abrir = global.ZX && global.ZX.formularios && global.ZX.formularios[b.dataset.form];
+      if (abrir) abrir(); else location.href = (NAV_SUPERIOR.find(n => n.form === b.dataset.form) || {}).url;
+    }));
     const sv = $('#zx-vista'); if (sv) sv.addEventListener('change', () => { setVista(sv.value); location.reload(); });
     const fv = $('#zx-vista-fin'); if (fv) fv.addEventListener('click', () => { setVista('real'); location.reload(); });
     $('#zx-salir').addEventListener('click', () => { API.cerrarSesion(); location.replace('index.html'); });
@@ -485,8 +490,8 @@
          pantalla en blanco o en "Cargando…" indefinidamente. */
       try {
         const r = onCambio(id);
-        if (r && typeof r.catch === 'function') r.catch(e => { console.error('[Portal Zubex]', e); fallo(e); });
-      } catch (e) { console.error('[Portal Zubex]', e); fallo(e); }
+        if (r && typeof r.catch === 'function') r.catch(e => { console.error('[Portal RRHH]', e); fallo(e); });
+      } catch (e) { console.error('[Portal RRHH]', e); fallo(e); }
     };
     $$('.sb-item[data-vista]').forEach(b => b.addEventListener('click', () => ir(b.dataset.vista)));
     return { ir };      // permite cambiar de vista por código (enlaces directos)
@@ -496,7 +501,7 @@
     const div = document.createElement('div');
     let html = '';
     if (nota) html += '<div class="nota"><b>Nota metodológica.</b> ' + esc(nota) + '</div>';
-    html += '<div class="pie">Portal Zubex · Zubex Industrial S.A. de C.V. · Generado: ' + esc(fmtLargo(hoyISO())) + '</div>';
+    html += '<div class="pie">Portal RRHH · Zubex Industrial S.A. de C.V. · Generado: ' + esc(fmtLargo(hoyISO())) + '</div>';
     div.innerHTML = html;
     main.appendChild(div);
   }
@@ -541,10 +546,10 @@
     }, ms || 12000);
     Promise.resolve().then(fn)
       .then(() => { listo = true; clearTimeout(limite); })
-      .catch(e => { listo = true; clearTimeout(limite); console.error('[Portal Zubex]', e); fallo(e); });
+      .catch(e => { listo = true; clearTimeout(limite); console.error('[Portal RRHH]', e); fallo(e); });
   }
   global.addEventListener('unhandledrejection', ev => {
-    console.error('[Portal Zubex]', ev.reason);
+    console.error('[Portal RRHH]', ev.reason);
     const main = $('#zx-main');
     if (main && main.textContent.indexOf('Cargando') >= 0) fallo(ev.reason);
   });
@@ -616,6 +621,6 @@
     esc, $, $$, MESES, DIAS,
     hoyISO, parse, fmt, fmtDT, fmtLargo, MES3, iso, sumaDias, diffDias, antiguedad, edad, iniciales, imc, alHash,
     alternarTema, toast, modal, cerrarModal, confirmar, calendario,
-    chip, requiereSesion, montarShell, bindVistas, pie, cargando, fallo, arranque, tabla, descargarCSV, leerCSV
+    chip, requiereSesion, sesionEfectiva, montarShell, bindVistas, pie, cargando, fallo, arranque, tabla, descargarCSV, leerCSV
   };
 })(window);

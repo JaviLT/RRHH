@@ -1,9 +1,9 @@
 /* ============================================================
-   Portal Zubex — Administración del sistema
+   Portal RRHH — Administración del sistema
    Usuarios (nivel + perfil), perfiles y módulos, y bitácora.
    ------------------------------------------------------------
    Modelo de dos ejes por persona (ver la tabla empleados):
-   · nivel  → jerarquía (empleado / coordinador / supervisor). Fijo,
+   · nivel  → jerarquía (empleado / jefe). Fijo,
      no se crea ni se edita aquí.
    · perfil → función/módulos extra. Editable: se pueden crear perfiles
      nuevos y asignarles o quitarles módulos desde la pestaña
@@ -80,7 +80,7 @@
       '</div>' +
       tabla([
         { t: 'Nº', k: 'id' }, { t: 'Nombre', k: 'nombre' }, { t: 'Reporta a', v: e => e.jefe ? nombreDe(e.jefe) : '—' },
-        { t: 'Dirección', k: 'direccion' }, { t: 'Puesto', k: 'puesto' },
+        { t: 'Departamento', k: 'departamento' }, { t: 'Puesto', k: 'puesto' },
         { t: 'Nivel', html: e => '<span class="chip in">' + esc(NIVEL_NOMBRE(e.nivel)) + '</span>' },
         { t: 'Perfil', html: e => e.perfil !== 'ninguno' ? '<span class="chip wn">' + esc(PERFIL_NOMBRE(e.perfil)) + '</span>' : '<span class="chip nt">—</span>' },
         { t: 'Estatus', html: e => '<span class="chip ' + (e.estatus === 'baja' ? 'no' : 'ok') + '">' + esc(e.estatus || 'activo') + '</span>' },
@@ -95,7 +95,7 @@
     $('#fp').addEventListener('change', e => { fPerfil = e.target.value; usuarios(); });
     $('#csv').addEventListener('click', () => descargarCSV('Usuarios_Portal_' + hoyISO() + '.csv', [
       { t: 'Número', k: 'id' }, { t: 'Nombre', k: 'nombre' }, { t: 'Correo', k: 'correo' },
-      { t: 'Dirección', k: 'direccion' }, { t: 'Nivel', v: e => NIVEL_NOMBRE(e.nivel) },
+      { t: 'Departamento', k: 'departamento' }, { t: 'Nivel', v: e => NIVEL_NOMBRE(e.nivel) },
       { t: 'Perfil', v: e => PERFIL_NOMBRE(e.perfil) }, { t: 'Estatus', k: 'estatus' }
     ], lista));
     $$('[data-acc]').forEach(b => b.addEventListener('click', () => popupAcceso(b.dataset.acc)));
@@ -132,7 +132,7 @@
       const p = perfilDe(perfilId);
       const universales = ZX.MODULOS.filter(m => m.roles === '*').map(m => m.nombre);
       const extra = p.modulos.map(nombreModulo);
-      if (nivel === 'supervisor') extra.push('Aptitud y restricciones (de su equipo)');
+      if (nivel === 'jefe') extra.push('Aptitud y restricciones (de su equipo)');
       $('#prev', body).innerHTML = '<b>Con este acceso verá:</b> ' + esc(universales.concat(extra).join(' · ')) +
         (perfilId === 'medico' ? '<br><b style="color:var(--dnt)">Incluye acceso a datos clínicos individuales.</b>' : '') +
         (perfilId === 'admin' ? '<br><b style="color:var(--dnt)">Incluye administración de usuarios y bitácora.</b>' : '');
@@ -201,7 +201,7 @@
     main.innerHTML =
       cab('Jefes y equipos', 'Asigna el nivel de cada persona y quién está a su cargo') +
       '<div class="priv">🧭 <div><b>Cómo se arma el organigrama.</b> Elige a una persona de la izquierda, ' +
-      'dale su nivel (Jefe / Gerente, Coordinador) y agrega a quienes están a su cargo. Después entra a ' +
+      'dale el nivel Jefe y agrega a quienes están a su cargo. Después entra a ' +
       'cualquiera de ellos con <b>"Ver su equipo →"</b> para asignar a quién tiene a su cargo <i>esa</i> persona, ' +
       'y así hacia abajo. Este dato decide quién aprueba vacaciones y banco de horas de cada quien. ' +
       'Al cambiar el jefe de alguien, sus solicitudes pendientes pasan al jefe nuevo.</div></div>' +
@@ -322,19 +322,16 @@
   }
 
   /* Agregar varias personas al equipo de `e`. Si e todavía es "Empleado",
-     se le sube de nivel en el mismo paso: sin nivel Coordinador o Jefe/Gerente
+     se le sube de nivel en el mismo paso: sin el nivel Jefe
      no puede aprobar nada aunque tenga gente a su cargo. */
   function popupAgregarEquipo(e) {
     const ancestros = new Set(cadenaArriba(e.id).map(x => x.id)); ancestros.add(e.id);
     const yaSuyos = new Set(equipoDe(e.id).map(x => x.id));
     const marcados = new Set(); let q = '';
-    const nivelInicial = e.nivel === 'empleado' ? 'supervisor' : e.nivel;
     const body = modal({
       titulo: 'Agregar personas al equipo de ' + e.nombre, ancho: 'lg',
       cuerpo:
-        '<div class="field"><label for="nvj">Nivel de ' + esc(e.nombre) + '</label><select id="nvj">' +
-          ['coordinador', 'supervisor'].map(n => '<option value="' + n + '"' + (n === nivelInicial ? ' selected' : '') + '>' + esc(NIVELES[n].nombre) + '</option>').join('') +
-        '</select><div class="hint">Para aprobar vacaciones y banco de horas de su equipo debe ser Coordinador o Jefe / Gerente.</div></div>' +
+        '<div class="hint" style="margin:0 0 10px">Quien tiene gente a su cargo debe tener el nivel <b>Jefe</b> para aprobar vacaciones y banco de horas de su equipo' + (e.nivel === 'jefe' ? '.' : '; como ' + esc(e.nombre) + ' aún es Empleado, se le sube a Jefe al agregar a su equipo.') + '</div>' +
         '<div class="field"><label for="qa">Buscar</label><input id="qa" placeholder="Nombre, nómina, puesto, dirección o departamento"></div>' +
         '<div id="cnt" style="font-size:12px;margin:4px 0"></div>' +
         '<div id="lsta" class="eq-list" style="max-height:320px"></div>',
@@ -343,8 +340,7 @@
         { txt: 'Agregar al equipo', accion: async () => {
             if (!marcados.size) return toast('Marca al menos a una persona.', 'wa');
             try {
-              const nivel = $('#nvj', body).value;
-              if (nivel !== e.nivel) await API.admin.cambiarAcceso(e.id, nivel, e.perfil, sesion.id);
+              if (e.nivel !== 'jefe') await API.admin.cambiarAcceso(e.id, 'jefe', e.perfil, sesion.id);
               const n = await API.admin.asignarEquipo(e.id, Array.from(marcados), sesion.id);
               cerrarModal(); toast(n + ' persona(s) agregadas al equipo.', 'ok'); await refrescar();
             } catch (ex) { toast(ex.message, 'no'); }

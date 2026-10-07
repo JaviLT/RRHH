@@ -1,10 +1,10 @@
-# Portal Zubex — RRHH y colaboradores
+# Portal RRHH — Recursos Humanos y colaboradores
 
 Aplicación web interna de Zubex Industrial: expediente médico ocupacional, **Etapa 1 del Expediente
 Médico Electrónico ZX** (análisis clínicos bajo lineamiento SQF), citas, vacaciones y banco de horas,
 y gestión documental de RRHH, con permisos distintos por nivel y por perfil.
 
-**Versión 2.2.1 · Equipo RMNC · Octubre 2026**
+**Versión 2.4.0 · Equipo RMNC · Octubre 2026**
 
 > **Trabaja únicamente con Supabase.** Ya no existe el modo demo ni ningún dato de ejemplo en el
 > código: todo lo que se ve viene de la base de datos real (proyecto `RRHH`). Las pruebas se hacen
@@ -12,6 +12,23 @@ y gestión documental de RRHH, con permisos distintos por nivel y por perfil.
 
 ## Qué hay de nuevo
 
+- **2.4.0** — **Nombre oficial: «Portal RRHH»** en todo el proyecto. **Barra superior:** los cuatro accesos se ven como botones, se quitó el
+  texto que cambiaba bajo el nombre y *Vacaciones*, *Banco de horas* y *Cita médica* **abren su formulario en el lugar**, sin cambiar de página
+  (módulo `assets/formularios.js`; al terminar avisan con el evento `zx:datos` y la pantalla se actualiza sola; las tarjetas de saldo del Inicio
+  hacen lo mismo y los enlaces `#solicitar-…` siguen funcionando). **Indicadores concentra los totales:** pasaron ahí el reporte de gestión de la
+  Etapa 1, y los totales de programa de exámenes, ausentismo, riesgos, vigilancia, vacunación y aptitud (vistas nuevas *Servicio médico* y
+  *Aptitud*; *Eventos por departamento* se fusionó con *Departamento y turno*). Ahora los calcula la base de datos (función `indicadores_salud`,
+  sólo totales, sin filas ni nombres) y **los grupos de menos de 5 personas se ocultan**; así *RRHH*, *Seguridad Industrial* y *Admin* ven cifras
+  reales (antes veían ceros porque no pueden leer las tablas clínicas). En *Análisis*, *Servicio médico* y *Aptitud* quedaron las listas con nombres.
+- **2.3.0** — **Días pendientes por aniversario:** al cumplir años, lo que sobró pasa a *pendientes* (los anteriores se borran), los días
+  normales se renuevan con la tabla `politica_vacaciones` y un saldo negativo se descuenta de los nuevos. El jefe directo (o RRHH/Admin)
+  los **activa** desde *Mi equipo* / *Maestro de colaboradores* y, una vez activos, se **usan primero**. **Banco de horas:** cada 1 de enero
+  vuelve a 12 h (lo negativo se descuenta); toda alta nueva entra con 12 h. Un proceso diario (`pg_cron`, 00:05 de Monterrey) lo hace solo.
+  **Vacaciones y horas:** sin la vista *Solicitudes pendientes* (se ven en *Mi saldo*), con dos tarjetas (*Días disponibles* y *Banco de horas*,
+  en negativo si bajan de 0) y el *Aprobador* en Detalles. **Inicio:** 3 tarjetas. **Niveles:** Coordinador y Jefe / Gerente son ahora un solo
+  nivel, **Jefe**; se eliminó el perfil *Dirección*. **Tablas:** la columna *Dirección* pasó a *Departamento* donde no había ya un *Departamento*.
+  **Mi historia clínica:** sin detalle de jornada, edad y antigüedad automáticas, regla "Ninguna" en 5 grupos y sin botón de cita.
+  **Seguridad:** `activar_pendientes`, `solicitar_vacaciones` y `solicitar_banco` ya no se saltan la validación cuando la persona no tiene jefe o no hay sesión.
 - **2.2.1** — **Vista previa por tipo de usuario** (sólo Administrador): lista *Ver como* en la barra superior con los
   niveles (Empleado, Coordinador, Jefe / Gerente) y los perfiles (Salud Ocupacional, Seguridad Industrial, Recursos Humanos,
   Dirección y los que se creen). Cambia lo que la pantalla muestra —menús, secciones, pestañas y botones—, no la identidad:
@@ -149,7 +166,7 @@ Programación → Resultado → Validación médica → ¿Normal o desviación?
   Alta/cierre, más No requiere seguimiento. Cada caso guarda fecha de detección, motivo, valoración
   médica, fecha de cita, indicaciones, estudios posteriores, próxima valoración, restricción
   derivada, fecha de alta y bitácora de notas.
-- **Reporte de gestión.** Cobertura y casos por departamento, casos por estatus y días promedio de la
+- **Reporte de gestión (ahora en Indicadores → Etapa 1 · Análisis).** Cobertura y casos por departamento, casos por estatus y días promedio de la
   detección al alta. Agregado, exportable e imprimible.
 
 **Quién ve qué, dentro del mismo módulo:** Salud Ocupacional ve el resultado y la valoración

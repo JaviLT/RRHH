@@ -1,5 +1,5 @@
 /* ============================================================
-   Portal Zubex — Módulo Recursos Humanos
+   Portal RRHH — Módulo Recursos Humanos
    Digitalización del formato RHF-34 "Movimiento de Personal"
    con flujo de firmas + expediente documental por colaborador.
    ============================================================ */
@@ -75,8 +75,10 @@
           opts([['', 'Todos']].concat(D.cats.turnos.map(t => [t, t])), fTurno) + '</select></div>' +
       '</div>' +
       tabla(cols.slice(0, 8).concat([
+        { t: 'Pendientes', html: e => esc(e.diasPend || 0) + (e.diasPend > 0 ? (e.pendActivos ? ' <span class="chip ok sm">Activados</span>' : ' <span class="chip wa sm">Por activar</span>') : '') },
         { t: 'Estatus', html: e => '<span class="chip ' + (e.estatus === 'baja' ? 'no' : 'ok') + '">' + esc(e.estatus || 'activo') + '</span>' },
-        { t: '', html: e => '<button class="btn sm" data-edit="' + esc(e.id) + '">Editar</button>' }
+        { t: '', html: e => '<div class="btn-row"><button class="btn sm" data-edit="' + esc(e.id) + '">Editar</button>' +
+            (e.diasPend > 0 && !e.pendActivos ? '<button class="btn ac sm" data-pend="' + esc(e.id) + '">Activar pendientes</button>' : '') + '</div>' }
       ]), lista, { vacio: 'Sin coincidencias.' });
 
     ZX.pie(main, 'Departamento y turno son datos maestros: los indicadores de salud ocupacional por departamento y turno se calculan con estos campos, no con lo que declara el colaborador en su historia clínica.');
@@ -87,6 +89,13 @@
     $('#csv').addEventListener('click', () => descargarCSV('Maestro_Colaboradores_' + hoyISO() + '.csv', cols, lista));
     $('#ibix').addEventListener('click', abrirImportadorIBIX);
     $$('[data-edit]').forEach(b => b.addEventListener('click', () => popupMaestro(b.dataset.edit)));
+    $$('[data-pend]').forEach(b => b.addEventListener('click', () => {
+      const e = empDe(b.dataset.pend);
+      ZX.confirmar('Activar días pendientes', '¿Activar los ' + e.diasPend + ' días pendientes de ' + e.nombre + '? Sus días disponibles pasarán de ' + e.dias + ' a ' + (e.dias + e.diasPend) + '.', async () => {
+        try { await API.empleados.activarPendientes(e.id); toast('Pendientes activados.', 'ok'); await refrescar(); }
+        catch (ex) { toast(ex.message, 'no'); }
+      });
+    }));
   }
 
   /* ================= IMPORTAR DESDE IBIX =================

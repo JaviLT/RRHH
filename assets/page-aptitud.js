@@ -1,5 +1,5 @@
 /* ============================================================
-   Portal Zubex — Aptitud y restricciones laborales
+   Portal RRHH — Aptitud y restricciones laborales
    ------------------------------------------------------------
    Vista para Seguridad Industrial (perfil Vigilancia).
    Muestra ÚNICAMENTE lo necesario para prevención en el puesto:
@@ -18,16 +18,14 @@
 
   /* Acceso pleno (planta completa) si el PERFIL lo otorga (medico o
      vigilancia — incluye a alguien que a la vez es Jefe de Seguridad
-     Industrial: nivel supervisor + perfil vigilancia). Sin ese perfil, un
-     supervisor sólo ve la restricción operativa de su propio equipo. */
+     Industrial: nivel jefe + perfil vigilancia). Sin ese perfil, un jefe sólo ve la restricción operativa de su propio equipo. */
   const accesoPleno = ['medico', 'vigilancia'].indexOf(sesion.perfil) >= 0;
-  const soloEquipo = !accesoPleno && sesion.nivel === 'supervisor';
+  const soloEquipo = !accesoPleno && sesion.nivel === 'jefe';
 
   const vistas = soloEquipo
     ? [{ id: 'restricciones', nombre: 'Restricciones de mi equipo', ico: '⛔' }]
     : [{ id: 'tablero', nombre: 'Aptitud del personal', ico: '🦺' },
-       { id: 'restricciones', nombre: 'Restricciones vigentes', ico: '⛔' },
-       { id: 'eventos', nombre: 'Eventos por departamento', ico: '🏭' }];
+       { id: 'restricciones', nombre: 'Restricciones vigentes', ico: '⛔' }];
   const shell = ZX.montarShell('aptitud', 'Aptitud laboral y restricciones', vistas);
   const main = shell.main;
 
@@ -75,7 +73,7 @@
 
   function render() {
     if (soloEquipo) return restricciones();
-    ({ tablero, restricciones, eventos }[vista] || tablero)();
+    ({ tablero, restricciones }[vista] || tablero)();
   }
 
   const nombreDic = c => { const x = CAT.dictamenes.find(d => d.c === c); return x ? x.n : 'Sin evaluación'; };
@@ -104,12 +102,7 @@
     main.innerHTML =
       cab('Aptitud del personal', D.filas.length + ' colaboradores activos', '<button class="btn gh" id="csv">⬇ CSV</button>') +
       AVISO +
-      '<div class="grid g4">' +
-        k('Aptos', D.filas.filter(f => f.dictamen === 'apto').length, 'Sin restricciones', 'gn') +
-        k('Con restricciones', conRestr.length, 'Requieren ajuste en el puesto', conRestr.length ? 'wn' : 'gn') +
-        k('Dictamen vencido', vencidos.length, 'Requieren nueva valoración', vencidos.length ? 'dn' : 'gn') +
-        k('Sin evaluación', sinEval.length, 'Nunca valorados', sinEval.length ? 'wn' : 'gn') +
-      '</div>' +
+      (ZX.puede(sesion, 'indicadores') ? '<div class="nota" style="margin-bottom:12px">Los totales de aptitud y los eventos por departamento están ahora en <a href="indicadores.html">Indicadores</a>.</div>' : '') +
       '<div class="filters" style="margin-top:14px">' +
         '<div class="field" style="min-width:250px"><label>Buscar</label>' +
           '<input id="q" value="' + esc(q) + '" placeholder="Nombre, número, dirección o departamento"></div>' +
@@ -163,50 +156,6 @@
     ZX.pie(main, 'Las restricciones describen la limitación operativa (qué no debe hacer la persona en su puesto), nunca la condición médica que la origina. Es responsabilidad del jefe de departamento garantizar que la restricción se respete.');
   }
 
-  /* ------------------ EVENTOS POR ÁREA ------------------ */
-  function eventos() {
-    const anio = String(new Date().getFullYear());
-    const delAnio = D.riesgos.filter(r => r.fecha.slice(0, 4) === anio);
-    const grupos = {};
-    D.filas.forEach(f => {
-      const kk = (f.departamento || '—') + ' · ' + (f.turno || '—');
-      if (!grupos[kk]) grupos[kk] = { etiqueta: kk, departamento: f.departamento, turno: f.turno, personas: 0, eventos: 0, restringidos: 0 };
-      grupos[kk].personas++;
-      if (f.restricciones && f.restricciones.toLowerCase() !== 'ninguna') grupos[kk].restringidos++;
-    });
-    delAnio.forEach(r => {
-      const e = D.emps.find(x => x.id === r.empleado); if (!e) return;
-      const kk = (e.departamento || '—') + ' · ' + (e.turno || '—');
-      if (grupos[kk]) grupos[kk].eventos++;
-    });
-    const lista = Object.keys(grupos).map(kk => {
-      const g = grupos[kk];
-      g.tasa = g.personas ? +(g.eventos / g.personas * 100).toFixed(1) : 0;
-      return g;
-    }).sort((a, b) => b.tasa - a.tasa);
-    const max = Math.max(1, ...lista.map(g => g.eventos));
-
-    main.innerHTML =
-      cab('Eventos de salud por departamento y turno', 'Accidentes, incidentes y enfermedades de trabajo · ' + anio) +
-      AVISO +
-      '<div class="card"><div class="card-t">Eventos registrados</div>' + lista.map(g =>
-        '<div style="display:flex;align-items:center;gap:12px;margin-bottom:9px">' +
-          '<div style="width:250px;font-size:12.5px;color:var(--tx2)">' + esc(g.etiqueta) + '</div>' +
-          '<div style="flex:1;background:var(--c2);border-radius:6px;height:20px;overflow:hidden">' +
-            '<div style="width:' + (g.eventos / max * 100) + '%;height:100%;background:var(--zx-ac)"></div></div>' +
-          '<b style="width:80px;text-align:right;font-size:12.5px">' + g.eventos + ' · ' + g.tasa + '%</b>' +
-        '</div>').join('') + '</div>' +
-      '<h2 class="sec-t">Detalle</h2>' +
-      tabla([
-        { t: 'Departamento', k: 'departamento' }, { t: 'Turno', k: 'turno' }, { t: 'Colaboradores', k: 'personas' },
-        { t: 'Eventos', k: 'eventos' }, { t: 'Tasa', v: g => g.tasa + '%' },
-        { t: 'Con restricción', k: 'restringidos' }
-      ], lista, { vacio: 'Sin datos.' }) +
-      '<div class="nota"><b>Grupos pequeños.</b> En departamentos o turnos con pocas personas, una tasa puede señalar a un individuo. ' +
-      'Conviene fijar un umbral mínimo de colaboradores por grupo antes de difundir este reporte.</div>';
-
-    ZX.pie(main, 'Este corte no incluye la causa clínica de cada evento; para el análisis de causa raíz (8D) coordina con el servicio médico y el responsable del departamento.');
-  }
 
   /* ---------------------- helpers ---------------------- */
   function cab(t, sub, acciones) {

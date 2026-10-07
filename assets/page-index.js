@@ -1,5 +1,5 @@
 /* ============================================================
-   Portal Zubex — index: acceso y portal de inicio
+   Portal RRHH — index: acceso y portal de inicio
    ============================================================ */
 (function () {
   'use strict';
@@ -8,6 +8,7 @@
   const root = document.getElementById('root');
 
   API.sesionActual() ? portal() : login();
+  document.addEventListener('zx:datos', () => { if (API.sesionActual()) portal(true); });   // un formulario de la barra superior terminó
 
   /* ------------------------- LOGIN ------------------------- */
   function login() {
@@ -58,36 +59,35 @@
   }
 
   /* ------------------------- PORTAL (inicio) ------------------------- */
-  async function portal() {
-    const shell = ZX.montarShell('inicio', 'Inicio');
+  async function portal(soloContenido) {
+    const shell = soloContenido && document.getElementById('zx-main')
+      ? { main: document.getElementById('zx-main'), sesion: ZX.sesionEfectiva() }
+      : ZX.montarShell('inicio', 'Inicio');
     if (!shell) return;
     const { main, sesion } = shell;
-    ZX.cargando(main);
+    if (!soloContenido) ZX.cargando(main);
 
     try {
       /* Sólo se piden datos propios: la ficha (nombre, departamento, correo, saldos),
          las solicitudes y las citas de quien entró. */
-      const [yo, sols, banco, citas] = await Promise.all([
+      const [yo, citas] = await Promise.all([
         API.empleados.uno(sesion.id),
-        API.vacaciones.solicitudes({ empleado: sesion.id }),
-        API.vacaciones.banco({ empleado: sesion.id }),
         API.citas.lista({ empleado: sesion.id })
       ]);
       const ficha = yo || sesion;
 
-      const pendVac = sols.filter(x => x.estado === 'pendiente').length;
-      const pendBan = banco.filter(x => x.estado === 'pendiente').length;
       const proxCita = citas.filter(c => c.estado === 'confirmada' && c.fecha >= hoyISO())
         .sort((a, b) => (a.fecha + a.hora).localeCompare(b.fecha + b.hora))[0];
 
       let tarjetas = '';
       if (ZX.puede(sesion, 'vacaciones')) {
         const disp = ficha.dias + (ficha.pendActivos ? ficha.diasPend : 0);
+        const neto = (+ficha.horas || 0) - (+ficha.horasDeber || 0);          // las horas por reponer se restan del banco
+        const notaDias = ficha.pendActivos && ficha.diasPend ? 'Incluye ' + ficha.diasPend + ' pendientes activados'
+          : (ficha.diasPend > 0 ? ficha.diasPend + ' pendientes por activar' : 'Disponibles hoy');
         tarjetas +=
-          kpi('Días de vacaciones', disp, 'Disponibles hoy', '', 'vacaciones.html#solicitar-vacaciones') +
-          kpi('Solicitudes pendientes de vacaciones', pendVac, pendVac ? 'Esperando aprobación' : 'Nada en trámite', pendVac ? 'wn' : '', 'vacaciones.html#pendientes-vacaciones') +
-          kpi('Banco de horas', ficha.horas + ' h', ficha.horasDeber ? ficha.horasDeber + ' h por reponer' : 'Disponibles hoy', '', 'vacaciones.html#solicitar-banco') +
-          kpi('Solicitudes pendientes de banco de horas', pendBan, pendBan ? 'Esperando aprobación' : 'Nada en trámite', pendBan ? 'wn' : '', 'vacaciones.html#pendientes-banco');
+          kpi('Días de vacaciones', disp, notaDias, disp < 0 ? 'dn' : '', 'vacaciones.html#solicitar-vacaciones') +
+          kpi('Banco de horas', neto + ' h', ficha.horasDeber ? 'Incluye ' + ficha.horasDeber + ' h por reponer' : 'Disponibles hoy', neto < 0 ? 'dn' : '', 'vacaciones.html#solicitar-banco');
       }
       tarjetas += kpi('Próxima cita', proxCita ? ZX.fmt(proxCita.fecha) : '—',
         proxCita ? proxCita.hora + ' h · Servicio médico' : 'Sin citas agendadas');
@@ -109,7 +109,13 @@
         '<div class="mod-grid">' + mods + '</div>';
 
       ZX.pie(main, 'Los saldos mostrados provienen del registro de personal y consideran los días pendientes sólo cuando están activados.');
-    } catch (e) { console.error('[Portal Zubex]', e); ZX.fallo(e); }
+      /* Las tarjetas de saldo abren su formulario en el lugar, sin cambiar de página */
+      document.querySelectorAll('a.kpi-link').forEach(a => a.addEventListener('click', ev => {
+        const h = (a.getAttribute('href') || '').split('#')[1];
+        const abrir = ZX.formularios && ({ 'solicitar-vacaciones': ZX.formularios.vacaciones, 'solicitar-banco': ZX.formularios.banco })[h];
+        if (abrir) { ev.preventDefault(); abrir(); }
+      }));
+    } catch (e) { console.error('[Portal RRHH]', e); ZX.fallo(e); }
   }
 
   /* Tarjeta de dato. Con `url` funciona como enlace. */

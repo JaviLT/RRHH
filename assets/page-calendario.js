@@ -1,5 +1,5 @@
 /* ============================================================
-   Portal Zubex — Calendario
+   Portal RRHH — Calendario
    Quién está fuera: vacaciones (por semana) y banco de horas (por día).
    Sólo con sesión iniciada. Lee las tablas mínimas calendario_vacaciones y
    calendario_banco —nombre, departamento y fechas de lo APROBADO— y se

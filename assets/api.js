@@ -1,5 +1,5 @@
 /* ============================================================
-   Portal Zubex — Capa de acceso a datos (API)
+   Portal RRHH — Capa de acceso a datos (API)
    ------------------------------------------------------------
    Único punto del frontend que habla con los datos: Supabase
    (RLS + funciones SECURITY DEFINER + triggers hacen cumplir en el
@@ -200,6 +200,9 @@
     uno: (id) => sb(cliente().from('empleados').select('*').eq('id', id).maybeSingle()).then(desdeDB),
     equipo: (jefeId) => sb(cliente().from('empleados').select('*').eq('jefe', jefeId)).then(listaDesdeDB),
     actualizar: (id, campos) => sb(cliente().from('empleados').update(haciaDB(campos)).eq('id', id).select().single()).then(desdeDB),
+
+    /* Activa TODOS los días pendientes de una persona (jefe directo, RRHH o Admin; lo valida la base). */
+    activarPendientes: (id) => sb(cliente().rpc('activar_pendientes', { p_empleado: id })),
 
     /* Catálogos vivos de departamento, área y turno. No son una lista fija
        en el código: la importación desde IBIX agrega los valores nuevos. */
@@ -478,6 +481,11 @@
      ============================================================ */
   const ESTATUS_CASO_VALIDOS = ['pendiente_valoracion', 'en_seguimiento', 'pendiente_valoracion_posterior', 'alta_cierre', 'no_requiere'];
 
+  /* Totales de salud ocupacional ya agregados por la base de datos (sin filas ni nombres; grupos < 5 ocultos). */
+  const indicadores = {
+    salud: (anio) => sb(cliente().rpc('indicadores_salud', { p_anio: anio || null }))
+  };
+
   const analisis = {
     programacion: (filtro) => sb(conFiltro(cliente().from('programacion_analisis').select('*'), filtro)).then(listaDesdeDB),
 
@@ -654,6 +662,6 @@
 
   global.ZX_API = {
     config, login, sesionActual, cerrarSesion, perfilesSync,
-    empleados, vacaciones, calendario, medico, citas, rrhh, analisis, auditoria, privacidad, admin
+    empleados, vacaciones, calendario, medico, citas, rrhh, analisis, indicadores, auditoria, privacidad, admin
   };
 })(window);
