@@ -252,7 +252,7 @@
         k('Accidentes', rt.accidentes, 'Con lesión', rt.accidentes ? 'dn' : 'gn'),
         k('Días perdidos', rt.dias_perdidos, 'Acumulados en el año'),
         k('Sin cerrar', rt.sin_cerrar, 'Requieren seguimiento', rt.sin_cerrar ? 'wn' : 'gn')]],
-      ['Vigilancia de salud ocupacional', [
+      ['Atención y Control de Salud', [
         k('Colaboradores en programa', vg.en_programa, 'Con vigilancia asignada'),
         k('Valoraciones próximas', vg.proximas, 'En los siguientes 30 días', vg.proximas ? 'wn' : 'gn'),
         k('Casos abiertos', vg.casos_abiertos, 'En seguimiento activo', vg.casos_abiertos ? 'wn' : 'gn'),

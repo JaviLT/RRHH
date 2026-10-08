@@ -6,7 +6,7 @@
   'use strict';
 
   const API = global.ZX_API;
-  const VERSION = '2.4.0';
+  const VERSION = '2.5.0';
 
   /* ---------------- Tipografía de marca ----------------
      El manual de marca pide Poppins con fallback a Segoe UI. Cargarla con un
@@ -46,6 +46,10 @@
 
     { id: 'medico',     nombre: 'Servicio médico',   ico: '🩺', url: 'medico.html',     roles: '*',
       desc: 'Tu historia clínica, tu expediente ocupacional y tus citas con el médico de empresa.' },
+    /* Doctor: el espacio de trabajo del médico (pacientes, agenda y consultas). Sin roles fijos: lo da
+       el perfil que lo traiga entre sus módulos (Salud Ocupacional). Servicio médico queda para los empleados. */
+    { id: 'doctor',     nombre: 'Doctor',            ico: '👨‍⚕️', url: 'doctor.html',
+      desc: 'Tus pacientes, la agenda del médico y el registro de consultas.' },
     /* Perfil-gated: sólo quien tenga un perfil con 'analisis' entre sus
        módulos (tabla perfiles de la base de datos). Sin roles fijos aquí — se
        resuelve en vivo contra el store, por eso Administración puede
@@ -265,9 +269,11 @@
   }
 
   /* ---------------- Modal ---------------- */
-  let modalAbierto = null;
+  /* Ventanas abiertas, la última es la de arriba. Por defecto abrir una cierra las demás; con
+     opts.encima se apila (la de abajo conserva lo capturado). opts.alCerrar se llama al cerrarla. */
+  const pilaModales = [];
   function modal(opts) {
-    cerrarModal();
+    if (!opts.encima) cerrarTodasLasModales();
     const ovl = document.createElement('div');
     ovl.className = 'ovl';
     ovl.innerHTML =
@@ -295,13 +301,19 @@
 
     $('.mo-x', ovl).addEventListener('click', cerrarModal);
     ovl.addEventListener('mousedown', e => { if (e.target === ovl) cerrarModal(); });
+    if (pilaModales.length) ovl.style.zIndex = String(100 + pilaModales.length * 10);
+    ovl._alCerrar = opts.alCerrar || null;
     document.body.appendChild(ovl);
-    modalAbierto = ovl;
+    pilaModales.push(ovl);
     const primero = body.querySelector('input,select,textarea,button');
     if (primero) primero.focus();
     return body;
   }
-  function cerrarModal() { if (modalAbierto) { modalAbierto.remove(); modalAbierto = null; } }
+  function cerrarModal() {                       // cierra sólo la de arriba
+    const o = pilaModales.pop();
+    if (o) { o.remove(); if (typeof o._alCerrar === 'function') { try { o._alCerrar(); } catch (e) { console.error(e); } } }
+  }
+  function cerrarTodasLasModales() { while (pilaModales.length) cerrarModal(); }
   document.addEventListener('keydown', e => { if (e.key === 'Escape') cerrarModal(); });
 
   function confirmar(titulo, texto, onOk) {
@@ -421,6 +433,20 @@
         '<div class="tb-menu">' + NAV_SUPERIOR.map(n => liga(n, 'tb-op')).join('') + '</div></details>';
   }
 
+  /* Botón «Volver arriba»: aparece al bajar y sube el área de contenido (es la que se desplaza). */
+  function montarVolverArriba() {
+    const area = document.getElementById('zx-main');
+    if (!area) return;
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'zx-top'; b.title = 'Volver arriba'; b.setAttribute('aria-label', 'Volver arriba');
+    b.innerHTML = '<span aria-hidden="true">▲</span>';
+    document.body.appendChild(b);
+    const ver = () => b.classList.toggle('on', area.scrollTop > 300);
+    area.addEventListener('scroll', ver, { passive: true });
+    b.addEventListener('click', () => area.scrollTo({ top: 0, behavior: 'smooth' }));
+    ver();
+  }
+
   function montarShell(activo, subtitulo, navItems) {
     const s = sesionEfectiva();
     if (!s) return null;
@@ -471,6 +497,7 @@
     document.body.innerHTML = '';
     document.body.appendChild(app);
     $('#zx-tema').addEventListener('click', alternarTema);
+    montarVolverArriba();
     document.querySelectorAll('[data-form]').forEach(b => b.addEventListener('click', () => {      // formularios de la barra superior
       const menu = b.closest('details'); if (menu) menu.removeAttribute('open');
       const abrir = global.ZX && global.ZX.formularios && global.ZX.formularios[b.dataset.form];

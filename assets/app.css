@@ -409,3 +409,15 @@ a.kpi-link .kpi-d::after{content:" →";opacity:.6}
 .tb-op.on{background:#fff;color:var(--zx);border-color:#fff}
 .tb-menu .tb-op{background:transparent;border:1px solid transparent;box-shadow:none;width:100%;text-align:left;color:var(--tx)}
 .tb-menu .tb-op:hover{background:var(--c2);border-color:transparent}
+
+
+/* ---- Botón «Volver arriba» ---- */
+.zx-top{position:fixed;right:28px;bottom:84px;width:44px;height:44px;border-radius:50%;border:none;background:var(--zx);color:#fff;
+  font-size:17px;line-height:1;cursor:pointer;box-shadow:var(--sh2);z-index:50;display:flex;align-items:center;justify-content:center;
+  opacity:0;pointer-events:none;transform:translateY(10px);transition:opacity .2s,transform .2s,background .15s}
+.zx-top.on{opacity:1;pointer-events:auto;transform:none}
+.zx-top:hover{background:var(--zx-ac)}
+@media(max-width:700px){.zx-top{right:16px;bottom:76px;width:40px;height:40px}}
+@media print{.zx-top{display:none}}
+/* Nombres largos en el menú lateral (por ejemplo «Atención y Control de Salud») pasan a dos líneas */
+.sb-subitem{white-space:normal;line-height:1.25}

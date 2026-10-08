@@ -419,16 +419,17 @@
       };
     })(),
 
-    agendar: (datos) => (async () => {
+    agendar: (datos, op) => (async () => {
       const delDia = await citas.lista({ fecha: datos.fecha });
       if (delDia.some(c => c.hora === datos.hora && c.estado !== 'cancelada')) throw new Error('Ese horario acaba de ocuparse. Elige otro.');
-      if (delDia.some(c => c.empleado === datos.empleado && c.estado === 'confirmada')) throw new Error('Ya tienes una cita confirmada ese día.');
+      if (delDia.some(c => c.empleado === datos.empleado && c.estado === 'confirmada' && c.id !== (op && op.ignorar))) throw new Error(datos.empleado === (sesionActual() || {}).id ? 'Ya tienes una cita confirmada ese día.' : 'Esta persona ya tiene una cita confirmada ese día.');
       const ag = await citas.agenda();
       const c = Object.assign({ id: nuevoId('A'), medico: ag.medico, estado: 'confirmada', creada: hoy() }, datos);
       return desdeDB(await sb(cliente().from('citas').insert(haciaDB(c)).select().single()));
     })(),
 
-    cancelar: (id, motivo) => sb(cliente().from('citas').update({ estado: 'cancelada' }).eq('id', id).select().single()).then(desdeDB)
+    cancelar: (id, motivo) => sb(cliente().from('citas').update({ estado: 'cancelada' }).eq('id', id).select().single()).then(desdeDB),
+    marcarAtendida: (id) => sb(cliente().from('citas').update({ estado: 'atendida' }).eq('id', id).select().single()).then(desdeDB),
   };
 
   /* ---------------- RRHH ---------------- */

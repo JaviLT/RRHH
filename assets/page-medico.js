@@ -10,17 +10,21 @@
   const API = window.ZX_API;
   const CAT = window.ZX_CAT;
 
-  const sesion = ZX.requiereSesion('medico');
+  /* Mismo código para dos módulos: «Doctor» (Pacientes y Agenda del médico) y «Servicio médico»
+     (lo personal de cada empleado y, mientras se mueven, las demás vistas del médico). */
+  const MODO_DOCTOR = window.ZX_MODO === 'doctor';
+  const sesion = ZX.requiereSesion(MODO_DOCTOR ? 'doctor' : 'medico');
   if (!sesion) return;
   const soyMedico = ZX.esClinico(sesion);
 
-  const vistas = soyMedico
+  const vistas = MODO_DOCTOR
     ? [{ id: 'pacientes',  nombre: 'Pacientes',            ico: '👥' },
-       { id: 'agenda',     nombre: 'Agenda del médico',    ico: '🗓️' },
-       { id: 'programa',   nombre: 'Programa de exámenes', ico: '🗓️' },
+       { id: 'agenda',     nombre: 'Agenda del médico',    ico: '🗓️' }]
+    : soyMedico
+    ? [{ id: 'programa',   nombre: 'Programa de exámenes', ico: '🗓️' },
        { id: 'riesgos',    nombre: 'Riesgos de trabajo',   ico: '⚠️' },
        { id: 'ausentismo', nombre: 'Ausentismo',           ico: '📉' },
-       { id: 'vigilancias',nombre: 'Vigilancia',           ico: '🔬' },
+       { id: 'vigilancias',nombre: 'Atención y Control de Salud', ico: '🔬' },
        { id: 'campanas',   nombre: 'Campañas y vacunación',ico: '💉' },
        { id: 'altas',      nombre: 'Alta y baja de expedientes', ico: '🗃️' },
        { id: 'ficha',      nombre: 'Mi historia clínica',  ico: '📝' },
@@ -29,7 +33,8 @@
        { id: 'expediente', nombre: 'Mi expediente',        ico: '📁' },
        { id: 'citas',      nombre: 'Mis citas',            ico: '📅' }];
 
-  const shell = ZX.montarShell('medico', 'Servicio médico · expediente ocupacional', vistas);
+  const shell = MODO_DOCTOR ? ZX.montarShell('doctor', 'Doctor', vistas)
+                            : ZX.montarShell('medico', 'Servicio médico · expediente ocupacional', vistas);
   const main = shell.main;
 
   let D = { emps: [], citas: [], agenda: null, consultas: [], mio: null, evaluaciones: [], riesgos: [], incapacidades: [], docs: [], vigilancia: [] };
@@ -97,7 +102,7 @@
       '<form id="f">' +
 
       /* ---- 1. Identificación ---- */
-      '<div class="card"><div class="card-t">1 · Datos de identificación</div>' +
+      '<div class="card"><div class="card-t">Datos de identificación</div>' +
         '<div class="frow">' +
           ro('Número de empleado', yo.id) + ro('Nombre completo', yo.nombre) +
           ro('Puesto', yo.puesto) + ro('Dirección', yo.direccion) + ro('Departamento', yo.departamento) +
@@ -117,7 +122,7 @@
       '</div>' +
 
       /* ---- 2. Información médica básica ---- */
-      '<div class="card"><div class="card-t">2 · Información médica básica</div>' +
+      '<div class="card"><div class="card-t">Información médica básica</div>' +
         '<div class="frow">' +
           sel('tipoSanguineo', 'Tipo sanguíneo', [''].concat(CAT.tiposSanguineos), c.tipoSanguineo) +
           txt('alergias', 'Alergias (medicamentos, alimentos, otros)', c.alergias, 'text', 200) +
@@ -131,7 +136,7 @@
       '</div>' +
 
       /* ---- 3. Historia clínica ocupacional ---- */
-      '<div class="card"><div class="card-t">3 · Historia clínica ocupacional</div>' +
+      '<div class="card"><div class="card-t">Historia clínica ocupacional</div>' +
         '<label style="display:block;font-size:11.5px;font-weight:600;color:var(--tx2);margin-bottom:6px">Puestos desempeñados (anteriores y actual)</label>' +
         '<div id="puestos"></div>' +
         '<button type="button" class="btn gh sm" id="addPuesto" style="margin:4px 0 16px">＋ Agregar puesto</button>' +
@@ -257,7 +262,7 @@
   /* ===========================================================
      EXPEDIENTE (propio o del paciente)
      =========================================================== */
-  let pacienteSel = null, tabExp = 'resumen';
+  let pacienteSel = null, tabExp = 'ficha';
 
   function expediente() { verExpediente(sesion.id, false); }
 
@@ -283,9 +288,9 @@
     if (esOtro) API.auditoria.registrar('expediente.consultar', empId, empId, 'Apertura de expediente clínico');
 
     const tabs = [
-      ['resumen', 'Resumen'], ['ficha', '1-3 · Ficha del colaborador'], ['eval', '4 · Evaluaciones'],
-      ['cons', '5 · Atenciones'], ['rt', '6 · Riesgos de trabajo'], ['inc', '7 · Incapacidades'],
-      ['docs', '8 · Documentos'], ['vig', '9 · Vigilancia'], ['vac', '10 · Vacunación'],
+      ['ficha', 'Ficha del colaborador'], ['eval', 'Evaluaciones'],
+      ['cons', 'Consultas'], ['rt', 'Riesgos de trabajo'], ['inc', 'Incapacidades'],
+      ['docs', 'Documentos'], ['vig', 'Atención y Control de Salud'], ['vac', 'Vacunación'],
       ['analisis', '🧪 Análisis clínicos']
     ];
     if (esOtro) tabs.push(['log', 'Historial de cambios']);
@@ -296,7 +301,7 @@
           ((ctx.cue.nacimiento || emp.nacimiento) ? ' · ' + edad(ctx.cue.nacimiento || emp.nacimiento) + ' años' : ''),
           (esOtro ? '<button class="btn" id="nueva">＋ Registrar consulta</button>' +
                     '<button class="btn gh" id="imprimir">🖨️ Imprimir</button>' +
-                    '<button class="btn gh" id="volver">← Pacientes</button>' : '')) +
+                    '<button class="btn gh" id="volver">← ' + esc((vistas.find(v => v.id === vista) || { nombre: 'Volver' }).nombre) + '</button>' : '')) +
       '<div style="margin-bottom:14px">' + chipExpediente(exp) +
         (exp.estado === 'activo' && exp.alta ? '<span class="page-sub" style="margin-left:9px">Expediente activado el ' + esc(fmt(exp.alta)) + '</span>' : '') +
         (exp.estado === 'baja' ? '<span class="page-sub" style="margin-left:9px">Baja el ' + esc(fmt(exp.baja)) + ' · conservar hasta ' + esc(fmt(exp.conservarHasta)) + '</span>' : '') +
@@ -313,7 +318,7 @@
       pintaTab(ctx);
     }));
     if (esOtro) {
-      $('#volver').addEventListener('click', () => { pacienteSel = null; vista = 'pacientes'; render(); });
+      $('#volver').addEventListener('click', () => { pacienteSel = null; render(); });
       $('#nueva').addEventListener('click', () => popupConsulta(empId));
       $('#imprimir').addEventListener('click', () => window.print());
     }
@@ -323,19 +328,18 @@
   function pintaTab(ctx) {
     const c = $('#tabc');
     c.innerHTML = ({
-      resumen: tabResumen, ficha: tabFicha, eval: tabEval, cons: tabCons,
+      ficha: tabFicha, eval: tabEval, cons: tabCons,
       rt: tabRT, inc: tabInc, docs: tabDocs, vig: tabVig, vac: tabVac, log: tabLog, analisis: tabAnalisis
-    }[tabExp] || tabResumen)(ctx);
+    }[tabExp] || tabFicha)(ctx);
     bindTab(ctx);
     ZX.pie(c, notaTab());
   }
 
   function notaTab() {
     return {
-      resumen: 'Resumen del expediente ocupacional. El IMC se calcula con la somatometría de la última consulta.',
       ficha: 'Información declarada por el colaborador. El servicio médico puede complementarla en consulta, pero no la edita desde aquí.',
       eval: 'Evaluaciones y dictámenes de aptitud conforme a NOM-030-STPS. La vigencia se calcula contra la fecha de hoy.',
-      cons: 'Atenciones médicas del expediente: motivo, signos vitales, diagnóstico, tratamiento, evolución y referencias.',
+      cons: 'Consultas médicas del expediente: motivo, signos vitales, diagnóstico, tratamiento, evolución y referencias.',
       rt: 'Riesgos de trabajo con análisis de causa raíz en 8 disciplinas (8D) y seguimiento hasta la reincorporación.',
       inc: 'Incapacidades y ausentismo médico. Los días se cuentan como días naturales del periodo.',
       docs: 'Por ahora sólo se registra el metadato del documento (nombre, tipo y fecha). La carga del archivo aún no está conectada.',
@@ -438,53 +442,24 @@
   }
 
   /* ---------- Tab: Resumen ---------- */
-  function tabResumen(x) {
-    const ult = x.cons[0];
-    const i = ult ? imc(ult.somatometria.peso, ult.somatometria.estatura) : null;
-    const dic = x.evals[0];
-    const incVig = x.inc.filter(v => v.estado === 'vigente');
-    const diasAus = x.inc.filter(v => v.inicio.slice(0, 4) === String(new Date().getFullYear())).reduce((a, v) => a + v.dias, 0);
-    const rtAbiertos = x.rts.filter(r => r.estado !== 'cerrado');
-
-    return '<div class="grid g4">' +
-        k('Dictamen de aptitud', dic ? nombreCat(CAT.dictamenes, dic.dictamen) : '—',
-          dic ? 'Vigente a ' + fmt(dic.vigencia) : 'Sin evaluación registrada',
-          dic ? (dic.dictamen === 'apto' ? 'gn' : dic.dictamen === 'no_apto' ? 'dn' : 'wn') : '') +
-        k('Consultas', x.cons.length, 'En el expediente') +
-        k('IMC', i || '—', i ? interpIMC(i) : 'Sin somatometría', i ? (i >= 18.5 && i < 25 ? 'gn' : 'wn') : '') +
-        k('Días de ausentismo', diasAus, 'En el año en curso', diasAus > 15 ? 'dn' : '') +
-        k('Riesgos de trabajo', x.rts.length, rtAbiertos.length ? rtAbiertos.length + ' sin cerrar' : 'Todos cerrados', rtAbiertos.length ? 'wn' : 'gn') +
-        k('Incapacidad vigente', incVig.length ? 'Sí' : 'No', incVig.length ? 'Hasta ' + fmt(incVig[0].fin) : 'Sin incapacidad activa', incVig.length ? 'dn' : 'gn') +
-        k('Tipo sanguíneo', x.cue.tipoSanguineo || '—', 'Declarado por el colaborador') +
-        k('Próxima valoración', x.vig.proximaValoracion ? fmt(x.vig.proximaValoracion) : '—', x.vig.periodicidad || 'Sin programa asignado') +
-      '</div>' +
-      (x.cue.alergias || x.vig.restricciones
-        ? '<div class="card" style="margin-top:14px;border-left:4px solid var(--dn)"><div class="card-t">⚠ Información crítica</div>' +
-          '<div class="frow">' + ro('Alergias', x.cue.alergias) + ro('Restricciones laborales vigentes', x.vig.restricciones) +
-          ro('Medicamentos de uso habitual', x.cue.medicamentosHabituales) + ro('Enfermedades crónicas', (x.cue.cronicas || []).join(', ')) +
-          '</div></div>' : '') +
-      '<h2 class="sec-t">Última atención</h2>' +
-      (ult ? tarjetaConsulta(ult) : '<div class="tbl-wrap"><div class="empty">Sin atenciones registradas.</div></div>');
-  }
-
-  /* ---------- Tab: Ficha 1-3 ---------- */
+  /* ---------- Tab: Ficha ---------- */
   function tabFicha(x) {
     const c = x.cue, e = x.emp;
     if (!c.actualizado) return '<div class="tbl-wrap"><div class="empty">El colaborador aún no ha llenado su historia clínica.</div></div>';
-    return '<div class="card"><div class="card-t">1 · Datos de identificación</div><div class="frow">' +
+    return '<div class="card"><div class="card-t">Datos de identificación</div><div class="frow">' +
         ro('Número de empleado', e.id) + ro('Nombre completo', e.nombre) + ro('Puesto', e.puesto) +
         ro('Dirección', e.direccion) + ro('Departamento', e.departamento) + ro('Fecha de ingreso', fmt(e.ingreso)) + ro('CURP', c.curp) +
         ro('Fecha de nacimiento', fmt(c.nacimiento || e.nacimiento)) + ro('Edad', (c.nacimiento || e.nacimiento) ? edad(c.nacimiento || e.nacimiento) + ' años' : '—') +
         ro('Sexo', c.sexo) + ro('Tipo de jornada', c.jornada) +
         ro('Contacto de emergencia', c.contactoEmergencia) + ro('Teléfono de emergencia', c.telefonoEmergencia) +
       '</div></div>' +
-      '<div class="card"><div class="card-t">2 · Información médica básica</div><div class="frow">' +
+      '<div class="card"><div class="card-t">Información médica básica</div><div class="frow">' +
         ro('Tipo sanguíneo', c.tipoSanguineo) + ro('Alergias', c.alergias) +
         ro('Antecedentes médicos', c.antecedentesMedicos) + ro('Antecedentes quirúrgicos', c.antecedentesQuirurgicos) +
         ro('Medicamentos habituales', c.medicamentosHabituales) + ro('Enfermedades crónicas', (c.cronicas || []).join(', ')) +
         ro('Heredofamiliares', (c.heredofamiliares || []).join(', ')) + ro('Consumo', (c.consumo || []).join(', ')) +
       '</div></div>' +
-      '<div class="card"><div class="card-t">3 · Historia clínica ocupacional</div>' +
+      '<div class="card"><div class="card-t">Historia clínica ocupacional</div>' +
         tabla([
           { t: 'Puesto', k: 'puesto' }, { t: 'Empresa', k: 'empresa' },
           { t: 'Desde', v: p => fmt(p.desde) }, { t: 'Hasta', v: p => p.hasta ? fmt(p.hasta) : 'Actual' },
@@ -551,11 +526,11 @@
     return '<span class="chip ' + (m[ev.dictamen] || 'nt') + '">' + esc(nombreCat(CAT.dictamenes, ev.dictamen)) + '</span>';
   }
 
-  /* ---------- Tab 5: Atenciones ---------- */
+  /* ---------- Tab: Consultas ---------- */
   function tabCons(x) {
     return (x.esOtro ? '<div class="btn-row" style="margin-bottom:14px"><button class="btn" data-act="nuevaCons">＋ Registrar consulta</button></div>' : '') +
       (x.cons.length ? x.cons.map(tarjetaConsulta).join('')
-        : '<div class="tbl-wrap"><div class="empty">Sin atenciones registradas.</div></div>');
+        : '<div class="tbl-wrap"><div class="empty">Sin consultas registradas.</div></div>');
   }
 
   function tarjetaConsulta(c) {
@@ -713,7 +688,7 @@
       '<div class="filters"><div class="field" style="min-width:290px"><label>Buscar por nombre, número o departamento</label>' +
         '<input id="q" value="' + esc(busca) + '" placeholder="Ej. nombre, nómina o departamento"></div></div>' +
       tabla([
-        { t: 'Nº', k: 'id' }, { t: 'Nombre', k: 'nombre' }, { t: 'Departamento', k: 'departamento' }, { t: 'Puesto', k: 'puesto' },
+        { t: 'Nº', k: 'id' }, { t: 'Nombre', k: 'nombre' }, { t: 'Departamento', k: 'departamento' },
         { t: 'Dictamen', html: e => { const ev = D.evaluaciones.filter(x => x.empleado === e.id).sort(desc('fecha'))[0];
             return ev ? chipDictamen(ev) : '<span class="chip nt">Sin evaluación</span>'; } },
         { t: 'Consultas', v: e => D.consultas.filter(c => c.empleado === e.id).length },
@@ -727,7 +702,7 @@
     ZX.pie(main, 'Acceso restringido al personal del servicio médico. Cada apertura de expediente debe quedar registrada en la bitácora de auditoría del servidor.');
     const q = $('#q');
     q.addEventListener('input', () => { busca = q.value; const p = q.selectionStart; pacientes(); const n = $('#q'); n.focus(); n.setSelectionRange(p, p); });
-    $$('[data-exp]').forEach(b => b.addEventListener('click', () => { tabExp = 'resumen'; verExpediente(b.dataset.exp, true); }));
+    $$('[data-exp]').forEach(b => b.addEventListener('click', () => { tabExp = 'ficha'; verExpediente(b.dataset.exp, true); }));
     $$('[data-con]').forEach(b => b.addEventListener('click', () => popupConsulta(b.dataset.con)));
   }
 
@@ -800,7 +775,7 @@
     const casos = filas.reduce((a, v) => a + (v.casos || []).filter(c => c.estado !== 'cerrado').length, 0);
 
     main.innerHTML =
-      cab('Vigilancia de salud ocupacional', 'Programas, restricciones y casos en seguimiento') +
+      cab('Atención y Control de Salud', 'Programas, restricciones y casos en seguimiento') +
             '<h2 class="sec-t">Programas activos</h2>' +
       tabla([
         { t: 'Nº', k: 'id' }, { t: 'Colaborador', k: 'nombre' }, { t: 'Departamento', k: 'departamento' },
@@ -821,10 +796,13 @@
   /* ===========================================================
      POPUPS DEL MÉDICO
      =========================================================== */
-  function popupConsulta(empId) {
+  function popupConsulta(empId, opc) {
+    opc = opc || {};
     const emp = empDe(empId);
-    modal({
+    let proxima = null, guardada = false;        // cita agendada desde esta consulta
+    const cuerpoConsulta = modal({
       titulo: 'Registrar consulta · ' + emp.nombre, ancho: 'lg',
+      alCerrar: () => { if (proxima && !guardada) API.citas.cancelar(proxima.id).catch(() => {}); },   // sin guardar la consulta no se deja la cita apartada
       cuerpo:
         '<fieldset><legend>Motivo</legend>' +
           '<div class="frow">' +
@@ -847,7 +825,8 @@
           area('dx', 'Diagnóstico', '') + area('tx', 'Tratamiento / indicaciones', '') +
           area('evolucion', 'Evolución', '', 'Estado del paciente y respuesta al tratamiento') +
           '<div class="frow">' + txt('referencia', 'Referencia / interconsulta', '', 'text', 200) +
-            txt('estudios', 'Estudios adicionales solicitados', '') + txt('proximaCita', 'Próxima cita', '', 'date') + '</div>' +
+            txt('estudios', 'Estudios adicionales solicitados', '') +
+            '<div class="field"><label>Próxima cita</label><div id="pcBox"></div></div></div>' +
         '</fieldset>',
       botones: [
         { txt: 'Cancelar', clase: 'gh' },
@@ -867,14 +846,40 @@
                 exploracion: ex,
                 diagnostico: $('#dx', b).value.trim(), tratamiento: $('#tx', b).value.trim(),
                 evolucion: $('#evolucion', b).value.trim(), referencia: $('#referencia', b).value.trim(),
-                estudios: $('#estudios', b).value.trim(), proximaCita: $('#proximaCita', b).value
+                estudios: $('#estudios', b).value.trim(), proximaCita: proxima ? proxima.fecha : ''
               });
-              cerrarModal(); toast('Consulta agregada al expediente.', 'ok');
-              tabExp = 'cons'; await volverExpediente(empId);
+              guardada = true; cerrarModal(); toast('Consulta agregada al expediente.', 'ok');
+              /* la cita de hoy de esta persona queda atendida (sin tocar la que se agendó como próxima) */
+              for (const c of D.citas.filter(c => c.empleado === empId && c.fecha === hoyISO() && c.estado === 'confirmada' && (!proxima || c.id !== proxima.id))) {
+                try { await API.citas.marcarAtendida(c.id); } catch (e) { /* no bloquea la consulta */ }
+              }
+              if (opc.volver) await refrescar(); else { tabExp = 'cons'; await volverExpediente(empId); }
             } catch (e) { toast(e.message, 'no'); }
           } }
       ]
     });
+    /* «Próxima cita»: abre el formulario de cita médica ENCIMA de la consulta, con la persona ya fijada */
+    const pcBox = $('#pcBox', cuerpoConsulta);
+    const abrirCita = () => ZX.formularios.cita({
+      empleado: empId, nombre: emp.nombre, motivo: 'Seguimiento', encima: true, reemplaza: proxima ? proxima.id : null,
+      alAgendar: async (nueva) => {
+        if (proxima) { try { await API.citas.cancelar(proxima.id); } catch (e) { /* ya no existía */ } }   // «Cambiar» libera la anterior
+        proxima = nueva; pintaProxima();
+      }
+    });
+    function pintaProxima() {
+      pcBox.innerHTML = proxima
+        ? '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><b>' + esc(fmt(proxima.fecha) + ' · ' + proxima.hora + ' h') + '</b>' +
+          '<button type="button" class="btn gh sm" id="pcCambiar">Cambiar</button><button type="button" class="btn gh sm" id="pcQuitar">Quitar</button></div>'
+        : '<button type="button" class="btn gh" id="pcAgendar">📅 Agendar próxima cita</button>';
+      const a = $('#pcAgendar', pcBox), c = $('#pcCambiar', pcBox), q = $('#pcQuitar', pcBox);
+      if (a) a.addEventListener('click', abrirCita);
+      if (c) c.addEventListener('click', abrirCita);
+      if (q) q.addEventListener('click', async () => {
+        try { await API.citas.cancelar(proxima.id); proxima = null; pintaProxima(); toast('Cita cancelada.', 'ok'); } catch (e) { toast(e.message, 'no'); }
+      });
+    }
+    pintaProxima();
   }
 
   let estudiosTmp = [];
@@ -1421,7 +1426,7 @@
         { t: 'Motivo', k: 'motivo' },
         { t: 'Estado', html: c => chip(c.estado) },
         { t: '', html: c => c.estado === 'confirmada'
-            ? '<button class="btn sm" data-exp="' + esc(c.empleado) + '">Abrir expediente</button>' : '' }
+            ? '<button class="btn ac sm" data-con="' + esc(c.empleado) + '">Registrar consulta</button>' : '' }
       ], dia, { vacio: 'Sin citas agendadas para este día.' }) +
       '<h2 class="sec-t">Próximos 7 días</h2>' +
       tabla([
@@ -1435,7 +1440,7 @@
     $('#a').addEventListener('click', () => { diaAgenda = sumaDias(diaAgenda, -1); agendaMedico(); });
     $('#s').addEventListener('click', () => { diaAgenda = sumaDias(diaAgenda, 1); agendaMedico(); });
     $('#h').addEventListener('click', () => { diaAgenda = hoyISO(); agendaMedico(); });
-    $$('[data-exp]').forEach(b => b.addEventListener('click', () => { tabExp = 'resumen'; verExpediente(b.dataset.exp, true); }));
+    $$('[data-con]').forEach(b => b.addEventListener('click', () => popupConsulta(b.dataset.con, { volver: true })));
   }
 
   function cab(t, sub, acciones) {

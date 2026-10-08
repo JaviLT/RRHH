@@ -157,7 +157,11 @@
   }
 
   /* ------------------- CITA MÉDICA ------------------- */
-  async function cita() {
+  /* op (opcional): { empleado, nombre, motivo, encima, alAgendar, reemplaza } — el médico agenda a nombre de otra persona.
+     Con encima:true se abre sobre otra ventana (la de abajo conserva lo capturado). */
+  async function cita(op) {
+    if (!op || (typeof Event !== 'undefined' && op instanceof Event)) op = {};
+    const paraOtro = !!op.empleado, pac = op.empleado || uid();
     let ag, medico = '';
     try { ag = await API.citas.agenda(); } catch (e) { return falla(e); }
     if (ag.medico) { try { const m = await API.empleados.uno(ag.medico); medico = m ? m.nombre : ''; } catch (e) { /* sin nombre */ } }
@@ -168,10 +172,11 @@
       return f;
     };
     const body = modal({
-      titulo: 'Agendar cita médica',
+      encima: !!op.encima,
+      titulo: paraOtro ? 'Agendar cita · ' + (op.nombre || pac) : 'Agendar cita médica',
       cuerpo:
-        '<div class="disp-big" style="font-size:19px">Servicio médico de empresa</div>' +
-        '<div class="disp-sub" style="margin-bottom:4px">' + esc((medico ? medico + ' · ' : '') + 'consultas de ' + ag.duracionMin + ' minutos') + '</div>' +
+        '<div class="disp-big" style="font-size:19px">' + esc(paraOtro ? (op.nombre || pac) : 'Servicio médico de empresa') + '</div>' +
+        '<div class="disp-sub" style="margin-bottom:4px">' + esc((paraOtro ? 'Nº ' + pac + ' · ' : (medico ? medico + ' · ' : '')) + 'consultas de ' + ag.duracionMin + ' minutos') + '</div>' +
         '<div class="disp-sub">Selecciona el día en el calendario</div>' +
         '<div id="cal"></div>' +
         '<div class="fm-nota">Atención de lunes a viernes. Los días sin servicio aparecen deshabilitados.</div>' +
@@ -181,7 +186,7 @@
         '</div>' +
         '<div class="fm-nota" id="libres" style="margin:-4px 0 10px"></div>' +
         '<div class="field"><label for="motivo">Motivo de la consulta</label>' +
-          '<input id="motivo" maxlength="150" placeholder="Ej. Revisión general, seguimiento, malestar"></div>',
+          '<input id="motivo" maxlength="150" value="' + esc(op.motivo || '') + '" placeholder="Ej. Revisión general, seguimiento, malestar"></div>',
       botones: [
         { txt: 'Cancelar', clase: 'gh' },
         { txt: 'Confirmar cita', accion: async (b) => {
@@ -189,8 +194,11 @@
             if (!fecha || !hora) return toast('Selecciona fecha y hora.', 'wa');
             if (!motivo) return toast('Escribe el motivo de la consulta.', 'wa');
             try {
-              await API.citas.agendar({ empleado: uid(), fecha, hora, motivo });
-              cerrarModal(); toast('Cita confirmada para el ' + fmt(fecha) + ' a las ' + hora + '.', 'ok'); avisar();
+              const nueva = await API.citas.agendar({ empleado: pac, fecha, hora, motivo }, { ignorar: op.reemplaza });
+              cerrarModal();
+              toast((paraOtro ? 'Cita agendada para ' + (op.nombre || pac) : 'Cita confirmada') + ' el ' + fmt(fecha) + ' a las ' + hora + '.', 'ok');
+              if (!op.encima) avisar();            // encima de otra ventana no se repinta la pantalla de fondo
+              if (op.alAgendar) op.alAgendar(nueva);
             } catch (e) { toast(e.message, 'no'); }
           } }
       ]

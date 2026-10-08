@@ -4,7 +4,7 @@ Aplicación web interna de Zubex Industrial: expediente médico ocupacional, **E
 Médico Electrónico ZX** (análisis clínicos bajo lineamiento SQF), citas, vacaciones y banco de horas,
 y gestión documental de RRHH, con permisos distintos por nivel y por perfil.
 
-**Versión 2.4.0 · Equipo RMNC · Octubre 2026**
+**Versión 2.5.0 · Equipo RMNC · Octubre 2026**
 
 > **Trabaja únicamente con Supabase.** Ya no existe el modo demo ni ningún dato de ejemplo en el
 > código: todo lo que se ve viene de la base de datos real (proyecto `RRHH`). Las pruebas se hacen
@@ -12,6 +12,13 @@ y gestión documental de RRHH, con permisos distintos por nivel y por perfil.
 
 ## Qué hay de nuevo
 
+- **2.5.0** — **Módulo «Doctor»** (`doctor.html`, sólo perfil Salud Ocupacional) con *Pacientes* y *Agenda del médico*; *Servicio médico* queda para los
+  empleados (y, mientras se mueven, las demás vistas del médico). Es el mismo código de `page-medico.js` en «modo doctor» (`assets/doctor-modo.js`).
+  **Pacientes** sin la columna *Puesto*. **Expediente:** se abre en *Ficha del colaborador* (sin *Resumen*), pestañas sin números, *Atenciones* →
+  *Consultas* y *Vigilancia* → *Atención y Control de Salud* (también la vista y el bloque de Indicadores). **Agenda:** el botón es *Registrar consulta*
+  (abre el formulario directo; al guardar, la cita de hoy pasa a *Atendida*). **En la consulta, «Próxima cita» es un botón** que abre el formulario de
+  cita **encima** de la consulta, con la persona ya fijada (Cambiar, Quitar; si se cierra la consulta sin guardar, la cita se cancela). Las ventanas
+  admiten **capas** (`modal({ encima: true })`). **Botón «Volver arriba»** en todas las pantallas. La migración 38 agrega `doctor` a los módulos del perfil `medico`.
 - **2.4.0** — **Nombre oficial: «Portal RRHH»** en todo el proyecto. **Barra superior:** los cuatro accesos se ven como botones, se quitó el
   texto que cambiaba bajo el nombre y *Vacaciones*, *Banco de horas* y *Cita médica* **abren su formulario en el lugar**, sin cambiar de página
   (módulo `assets/formularios.js`; al terminar avisan con el evento `zx:datos` y la pantalla se actualiza sola; las tarjetas de saldo del Inicio
@@ -86,6 +93,7 @@ borra además los datos ficticios que versiones anteriores pudieron dejar en ese
 ├── index.html            Acceso + portal de inicio
 ├── vacaciones.html       Vacaciones y banco de horas
 ├── medico.html           Servicio médico (mi historia; expedientes, sólo Salud Ocupacional)
+├── doctor.html          Módulo Doctor: Pacientes y Agenda del médico (usa page-medico.js en modo doctor)
 ├── calendario.html       Calendario: quién está fuera (vacaciones por semana, banco de horas por día)
 ├── analisis.html         Análisis clínicos (Etapa 1 · SQF)
 ├── aptitud.html          Aptitud y restricciones
