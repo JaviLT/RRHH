@@ -7,7 +7,9 @@
   const API = window.ZX_API;
   const root = document.getElementById('root');
 
-  API.sesionActual() ? portal() : login();
+  const ses0 = API.sesionActual();
+  if (ses0 && ses0.claveCambiada === false) location.replace('cuenta.html?cambio=1');      // contraseña temporal: primero se cambia
+  else if (ses0) portal(); else login();
   document.addEventListener('zx:datos', () => { if (API.sesionActual()) portal(true); });   // un formulario de la barra superior terminó
 
   /* ------------------------- LOGIN ------------------------- */
@@ -42,13 +44,29 @@
         '</div></section>' +
       '</div>';
 
+    if (/[?&]expirada=1/.test(location.search)) { const e0 = $('#err'); e0.textContent = 'Tu sesión se cerró por inactividad. Vuelve a entrar.'; e0.classList.remove('hidden'); }
+
+    /* Segundo paso: código de la aplicación de verificación */
+    function pedirCodigo(factorId) {
+      $('#f').innerHTML =
+        '<div class="field"><label for="cod">Código de verificación (6 dígitos)</label><input id="cod" inputmode="numeric" maxlength="6" autocomplete="one-time-code" autofocus></div>' +
+        '<button class="btn" style="width:100%;justify-content:center" id="btn2" type="submit">Verificar</button>';
+      $('#err').classList.add('hidden');
+      $('#f').onsubmit = async (e2) => {
+        e2.preventDefault(); const b = $('#btn2'); b.disabled = true;
+        try { await API.verificarMfa(factorId, $('#cod').value); location.reload(); }
+        catch (ex) { $('#err').textContent = ex.message; $('#err').classList.remove('hidden'); b.disabled = false; }
+      };
+    }
+
     $('#f').addEventListener('submit', async (e) => {
       e.preventDefault();
       const err = $('#err'), btn = $('#btn');
       err.classList.add('hidden');
       btn.disabled = true; btn.textContent = 'Verificando…';
       try {
-        await API.login($('#u').value, $('#p').value);
+        const r = await API.login($('#u').value, $('#p').value);
+        if (r && r.requiereMfa) { pedirCodigo(r.factorId); return; }
         location.reload();
       } catch (ex) {
         err.textContent = ex.message || 'No fue posible iniciar sesión.';

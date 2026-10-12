@@ -4,7 +4,7 @@ Aplicación web interna de Zubex Industrial: expediente médico ocupacional, **E
 Médico Electrónico ZX** (análisis clínicos bajo lineamiento SQF), citas, vacaciones y banco de horas,
 y gestión documental de RRHH, con permisos distintos por nivel y por perfil.
 
-**Versión 2.7.0 · Equipo RMNC · Octubre 2026**
+**Versión 2.8.0 · Equipo RMNC · Octubre 2026**
 
 > **Trabaja únicamente con Supabase.** Ya no existe el modo demo ni ningún dato de ejemplo en el
 > código: todo lo que se ve viene de la base de datos real (proyecto `RRHH`). Las pruebas se hacen
@@ -12,6 +12,13 @@ y gestión documental de RRHH, con permisos distintos por nivel y por perfil.
 
 ## Qué hay de nuevo
 
+- **2.8.0** — **Pacientes** con la columna *Historia clínica* (Actualizada ≤ 12 meses / Desactualizada / Sin historia), filtro y totales; sin *Consultas* ni *Riesgos*. **El médico crea y modifica la
+  historia clínica** (Ficha y atajo desde la consulta; motivo obligatorio; exige consentimiento vigente; migración 40: políticas `historia_*_medico`, columnas `actualizado_por`/`ultimo_motivo`, fecha y autor
+  sellados por el servidor). **Documentos:** subir, reemplazar y eliminar con motivo (`estado`, `reemplaza`, `motivo_baja`; validación de tamaño, extensión y firma del archivo). **Trazabilidad:** auditoría de
+  escrituras clínicas por triggers (`auditar_escritura`, sólo nombres de campos), registro de lecturas (`registrar_acceso`), el médico lee la bitácora clínica (migración 42) y las acciones salen con nombre legible.
+  **Seguridad de acceso:** pantalla *Mi cuenta* (`cuenta.html`), cambio obligatorio de la contraseña temporal (`empleados.clave_cambiada`; **las 342 cuentas deberán cambiarla en su próximo ingreso**), verificación
+  en dos pasos opcional (TOTP) y cierre por inactividad (20 min). **Doctor → Pendientes** (`pendientes_medico()`). **Cuadro de búsqueda automático** en toda tabla de personas (`app.js`), con el mismo criterio en
+  las búsquedas que ya existían. Correcciones: guardar una consulta **sin próxima cita** fallaba (desde la 2.5.0); la fecha de nacimiento vacía rompía el guardado de la historia. Se entregan scripts de respaldo (`Respaldo_Portal_RRHH.zip`).
 - **2.7.0** — **Documentos con archivo.** En el expediente, la pestaña *Documentos* abre (*Ver*) y descarga (*Descargar*) el PDF guardado en el almacenamiento privado
   `documentos-medicos` (migración 39: bucket, políticas y columnas `ruta`, `mime`, `tam_bytes`). El médico ve todos; cada persona sólo los de su carpeta (`<nómina>/…`). El enlace es
   firmado y dura 10 minutos. Los documentos se piden por persona (la lista global tenía tope de 1,000 filas). **Datos cargados:** se borraron los datos de demostración y se cargaron

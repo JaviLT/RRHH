@@ -45,7 +45,7 @@
   function maestro() {
     const lista = D.emps.filter(e =>
       (!fDep || e.departamento === fDep) && (!fTurno || e.turno === fTurno) &&
-      (!qm || (e.nombre + ' ' + e.id + ' ' + (e.direccion || '') + ' ' + (e.departamento || '') + ' ' + (e.puesto || '')).toLowerCase().indexOf(qm.toLowerCase()) >= 0));
+      (!qm || ZX.coincide(e.nombre + ' ' + e.id + ' ' + (e.direccion || '') + ' ' + (e.departamento || '') + ' ' + (e.puesto || ''), qm)));
     const sinTurno = D.emps.filter(e => !e.turno).length;
     const cols = [
       { t: 'Nº', k: 'id' }, { t: 'Nombre', k: 'nombre' }, { t: 'Puesto', k: 'puesto' },
@@ -351,7 +351,7 @@
   function listaMovs() {
     const f = D.movs.filter(x =>
       (!fEstado || x.estado === fEstado) && (!fTipo || x.tipo === fTipo) &&
-      (!q || (x.folio + ' ' + x.empleadoNombre + ' ' + (x.departamento || '')).toLowerCase().indexOf(q.toLowerCase()) >= 0));
+      (!q || ZX.coincide(x.folio + ' ' + x.empleadoNombre + ' ' + (x.departamento || ''), q)));
 
     const cols = [
       { t: 'Folio', k: 'folio' },
@@ -591,7 +591,7 @@
   let qe = '', empSel = null;
   function expedientes() {
     if (empSel) return verExpediente(empSel);
-    const lista = D.emps.filter(e => !qe || (e.nombre + ' ' + e.id + ' ' + (e.direccion || '') + ' ' + (e.departamento || '')).toLowerCase().indexOf(qe.toLowerCase()) >= 0);
+    const lista = D.emps.filter(e => !qe || ZX.coincide(e.nombre + ' ' + e.id + ' ' + (e.direccion || '') + ' ' + (e.departamento || ''), qe));
     main.innerHTML =
       cab('Expedientes documentales', D.emps.length + ' colaboradores') +
       '<div class="priv">🔐 <div>Este expediente contiene <b>documentación laboral</b>. Los datos clínicos viven en el módulo de servicio médico y no son visibles desde aquí, ni siquiera para Recursos Humanos.</div></div>' +

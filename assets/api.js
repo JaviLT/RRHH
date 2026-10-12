@@ -173,7 +173,18 @@
     const { data, error } = await cliente().auth.signInWithPassword({ email: correo, password });
     if (error) throw new Error('Usuario o contraseña incorrectos.');
 
-    const fila = await sb(cliente().from('empleados').select('*').eq('auth_user_id', data.user.id).maybeSingle());
+    /* ¿Activó la verificación en dos pasos? Entonces falta el código antes de armar la sesión. */
+    const { data: aal } = await cliente().auth.mfa.getAuthenticatorAssuranceLevel();
+    if (aal && aal.nextLevel === 'aal2' && aal.currentLevel !== 'aal2') {
+      const { data: fx } = await cliente().auth.mfa.listFactors();
+      const f = ((fx && fx.totp) || []).find(x => x.status === 'verified');
+      if (f) return { requiereMfa: true, factorId: f.id };
+    }
+    return completarLogin(data.user);
+  }
+
+  async function completarLogin(user) {
+    const fila = await sb(cliente().from('empleados').select('*').eq('auth_user_id', user.id).maybeSingle());
     if (!fila) {
       await cliente().auth.signOut();
       throw new Error('Tu usuario no tiene un perfil de empleado ligado todavía. Contacta a Recursos Humanos.');
@@ -185,11 +196,54 @@
     const emp = desdeDB(fila);
     const sesion = {
       id: emp.id, nombre: emp.nombre, correo: emp.correo, direccion: emp.direccion, departamento: emp.departamento,
-      puesto: emp.puesto, nivel: emp.nivel, perfil: emp.perfil, inicio: new Date().toISOString()
+      puesto: emp.puesto, nivel: emp.nivel, perfil: emp.perfil, claveCambiada: emp.claveCambiada, inicio: new Date().toISOString()
     };
     sessionStorage.setItem(config.sesionKey, JSON.stringify(sesion));
     await refrescarCaches();
     return sesion;
+  }
+
+  /* Segundo paso del acceso: código de 6 dígitos de la aplicación de verificación. */
+  async function verificarMfa(factorId, codigo) {
+    const { data: ch, error: e1 } = await cliente().auth.mfa.challenge({ factorId });
+    if (e1) throw new Error('No se pudo iniciar la verificación: ' + e1.message);
+    const { error } = await cliente().auth.mfa.verify({ factorId, challengeId: ch.id, code: String(codigo || '').trim() });
+    if (error) throw new Error('El código no es correcto o ya venció. Intenta con el siguiente.');
+    const { data } = await cliente().auth.getUser();
+    return completarLogin(data.user);
+  }
+
+  /* Verificación en dos pasos (TOTP) — se administra desde «Mi cuenta». */
+  const mfa = {
+    factores: async () => { const { data, error } = await cliente().auth.mfa.listFactors(); if (error) throw new Error(error.message); return data; },
+    enrolar: async () => {
+      const { data, error } = await cliente().auth.mfa.enroll({ factorType: 'totp', friendlyName: 'Portal RRHH ' + new Date().toISOString().slice(0, 10) });
+      if (error) throw new Error(error.message);
+      return data;                                   // { id, totp: { qr_code, secret, uri } }
+    },
+    confirmar: (factorId, codigo) => verificarMfaSinSesion(factorId, codigo),
+    quitar: async (factorId) => { const { error } = await cliente().auth.mfa.unenroll({ factorId }); if (error) throw new Error(error.message); }
+  };
+  async function verificarMfaSinSesion(factorId, codigo) {
+    const { data: ch, error: e1 } = await cliente().auth.mfa.challenge({ factorId });
+    if (e1) throw new Error(e1.message);
+    const { error } = await cliente().auth.mfa.verify({ factorId, challengeId: ch.id, code: String(codigo || '').trim() });
+    if (error) throw new Error('El código no es correcto o ya venció. Intenta con el siguiente.');
+  }
+
+  /* Cambio de contraseña propio. La contraseña actual se comprueba con un cliente aparte para no alterar la sesión abierta. */
+  async function cambiarClave(actual, nueva) {
+    const { data: u } = await cliente().auth.getUser();
+    const correo = u && u.user && u.user.email;
+    if (!correo) throw new Error('No se pudo verificar tu sesión. Vuelve a entrar.');
+    const aparte = global.supabase.createClient(global.ZX_CONFIG.supabaseUrl, global.ZX_CONFIG.supabaseKey, { auth: { persistSession: false, autoRefreshToken: false } });
+    const { error: e1 } = await aparte.auth.signInWithPassword({ email: correo, password: actual });
+    if (e1) throw new Error('La contraseña actual no es correcta.');
+    const { error: e2 } = await cliente().auth.updateUser({ password: nueva });
+    if (e2) throw new Error(/same|different/i.test(e2.message) ? 'La nueva contraseña debe ser distinta de la actual.' : 'No se pudo cambiar la contraseña: ' + e2.message);
+    await sb(cliente().rpc('marcar_clave_cambiada'));
+    const ses = sesionActual();
+    if (ses) { ses.claveCambiada = true; sessionStorage.setItem(config.sesionKey, JSON.stringify(ses)); }
   }
 
   /* ---------------- Empleados ---------------- */
@@ -292,6 +346,21 @@
   };
 
   /* ---------------- Módulo médico ---------------- */
+  /* Validación de un archivo antes de subirlo: tamaño, extensión Y contenido real (firma del archivo), para no aceptar
+     un ejecutable renombrado como PDF. No sustituye a un antivirus. */
+  async function validarArchivo(archivo) {
+    if (!archivo) throw new Error('Elige un archivo.');
+    if (archivo.size <= 0) throw new Error('El archivo está vacío.');
+    if (archivo.size > 20 * 1024 * 1024) throw new Error('El archivo pesa más de 20 MB.');
+    const ext = (archivo.name.split('.').pop() || '').toLowerCase();
+    const b = new Uint8Array(await archivo.slice(0, 8).arrayBuffer());
+    const es = (...x) => x.every((v, i) => b[i] === v);
+    if (ext === 'pdf' && es(0x25, 0x50, 0x44, 0x46, 0x2D)) return { ext: 'pdf', mime: 'application/pdf' };
+    if ((ext === 'jpg' || ext === 'jpeg') && es(0xFF, 0xD8, 0xFF)) return { ext: 'jpg', mime: 'image/jpeg' };
+    if (ext === 'png' && es(0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)) return { ext: 'png', mime: 'image/png' };
+    throw new Error('Sólo se aceptan PDF, JPG o PNG, y el contenido debe corresponder a la extensión.');
+  }
+
   const medico = {
     cuestionario: (empleadoId) => sb(cliente().from('historias_clinicas').select('*').eq('empleado', empleadoId).maybeSingle()).then(desdeDB),
 
@@ -304,6 +373,17 @@
       const fila = await sb(cliente().from('historias_clinicas').upsert(haciaDB(cuerpo), { onConflict: 'empleado' }).select().single());
       return desdeDB(fila);
     })(),
+
+    /* Sólo fechas de actualización de TODAS las historias (para ver quién las tiene al día). */
+    historiasResumen: () => sbTodo(() => cliente().from('historias_clinicas').select('empleado,actualizado,actualizado_por').order('empleado')).then(listaDesdeDB),
+    tieneConsentimiento: (empleadoId) => sb(cliente().from('consentimientos').select('empleado').eq('empleado', empleadoId).eq('vigente', true).limit(1)).then(f => !!(f && f.length)),
+    /* El médico modifica la historia de otra persona. El servidor pone fecha y autor, exige el consentimiento vigente y deja el rastro en la bitácora. */
+    guardarCuestionarioMedico: (empleadoId, datos, motivo) => (async () => {
+      const cuerpo = Object.assign({ empleado: empleadoId }, datos, { ultimoMotivo: motivo });
+      const fila = await sb(cliente().from('historias_clinicas').upsert(haciaDB(cuerpo), { onConflict: 'empleado' }).select().single());
+      return desdeDB(fila);
+    })(),
+    pendientes: () => sb(cliente().rpc('pendientes_medico')),
 
     consultas: (empleadoId) => sb(empleadoId ? cliente().from('consultas').select('*').eq('empleado', empleadoId) : cliente().from('consultas').select('*')).then(listaDesdeDB),
 
@@ -355,6 +435,29 @@
       if (error || !data) throw new Error('No se pudo abrir el documento' + (error ? ': ' + error.message : '.'));
       return data.signedUrl;
     })(),
+
+    /* Subir un documento (PDF o imagen escaneada) al almacenamiento privado y registrarlo. Valida tamaño, extensión y el contenido real del archivo. */
+    subirDocumento: (empleadoId, archivo, meta) => (async () => {
+      const info = await validarArchivo(archivo);
+      const quitaAcentos = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const base = quitaAcentos(meta.nombre || archivo.name).replace(/\.[A-Za-z0-9]+$/, '').replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 60) || 'documento';
+      const aleatorio = Math.random().toString(36).slice(2, 10);
+      const ruta = empleadoId + '/' + new Date().toISOString().slice(0, 10).replace(/-/g, '') + '_' + aleatorio + '_' + base + '.' + info.ext;
+      const { error } = await cliente().storage.from('documentos-medicos').upload(ruta, archivo, { contentType: info.mime, upsert: false });
+      if (error) throw new Error('No se pudo subir el archivo: ' + error.message);
+      const fila = { id: 'DOC-' + Date.now().toString(36).toUpperCase() + '-' + aleatorio.toUpperCase(), empleado: empleadoId, tipo: meta.tipo, nombre: meta.nombre || archivo.name,
+                     fecha: meta.fecha || null, tam: Math.max(1, Math.round(archivo.size / 1024)) + ' KB', notas: meta.notas || null, ruta, mime: info.mime, tamBytes: archivo.size, reemplaza: meta.reemplaza || null };
+      try { return desdeDB(await sb(cliente().from('documentos_medicos').insert(haciaDB(fila)).select().single())); }
+      catch (e) { await cliente().storage.from('documentos-medicos').remove([ruta]); throw e; }
+    })(),
+    /* Reemplazar: sube el nuevo y marca el anterior como «reemplazado» (el archivo anterior se conserva como evidencia). */
+    reemplazarDocumento: (doc, archivo, meta) => (async () => {
+      const nuevo = await medico.subirDocumento(doc.empleado, archivo, Object.assign({}, meta, { reemplaza: doc.id }));
+      await sb(cliente().from('documentos_medicos').update({ estado: 'reemplazado' }).eq('id', doc.id));
+      return nuevo;
+    })(),
+    /* Eliminar = baja lógica con motivo: el archivo se conserva y el médico puede verlo; la persona ya no. */
+    eliminarDocumento: (id, motivo) => sb(cliente().from('documentos_medicos').update(haciaDB({ estado: 'eliminado', motivoBaja: motivo })).eq('id', id).select().single()).then(desdeDB),
 
     guardarDocumento: (datos) => (async () => {
       const d2 = Object.assign({ id: nuevoId('DM'), fecha: hoy() }, datos);
@@ -559,7 +662,7 @@
        esta llamada es un no-op. Acciones que todavía
        no tienen su propio trigger (consultas, evaluaciones, RHF-34...)
        quedan sin bitácora por ahora: pendiente agregar más triggers. */
-    registrar: () => Promise.resolve(null),
+    registrar: (accion, empleadoId, _entidad, detalle) => cliente().rpc('registrar_acceso', { p_accion: accion, p_empleado: empleadoId, p_detalle: detalle || null }).then(() => null, () => null),
 
     cambiarEstatus: (empleadoId, estatus) => sb(cliente().from('empleados').update({ estatus }).eq('id', empleadoId).select().single()).then(desdeDB)
   };
@@ -667,7 +770,7 @@
   function perfilesSync() { return (leerCache(config.perfilesCacheKey) || []); }
 
   global.ZX_API = {
-    config, login, sesionActual, cerrarSesion, perfilesSync,
+    config, login, verificarMfa, mfa, cambiarClave, sesionActual, cerrarSesion, perfilesSync,
     empleados, vacaciones, calendario, medico, citas, rrhh, analisis, indicadores, auditoria, privacidad, admin
   };
 })(window);

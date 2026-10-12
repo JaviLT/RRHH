@@ -19,7 +19,8 @@
   const NOTA_IND = ZX.puede(sesion, 'indicadores') ? ' Los totales de esta sección están ahora en Indicadores → Servicio médico.' : '';
 
   const vistas = MODO_DOCTOR
-    ? [{ id: 'pacientes',  nombre: 'Pacientes',            ico: '👥' },
+    ? [{ id: 'pendientes', nombre: 'Pendientes',           ico: '✅' },
+       { id: 'pacientes',  nombre: 'Pacientes',            ico: '👥' },
        { id: 'agenda',     nombre: 'Agenda del médico',    ico: '🗓️' }]
     : soyMedico
     ? [{ id: 'programa',   nombre: 'Programa de exámenes', ico: '🗓️' },
@@ -49,9 +50,9 @@
       API.medico.programa(), API.medico.vacunas(), API.medico.campanas(), API.medico.expedientes(),
       API.privacidad.consentimiento(sesion.id), API.citas.lista(), API.citas.agenda()
     ]);
-    const [resAnalisis, casosAnalisis] = await Promise.all([API.analisis.resultados(), API.analisis.casos()]);
+    const [resAnalisis, casosAnalisis, historias] = await Promise.all([API.analisis.resultados(), API.analisis.casos(), API.medico.historiasResumen()]);
     D = { emps, consultas, mio, evaluaciones, riesgos, incapacidades, docs, programa, vacunas, campanas, expedientes,
-          resAnalisis, casosAnalisis, consentimiento, citas, agenda };
+          resAnalisis, casosAnalisis, historias, consentimiento, citas, agenda };
   }
 
   let vista = vistas[0].id;
@@ -64,7 +65,7 @@
   function render() {
     if (!D.agenda) return;                   // todavía cargando: arranque() pinta al terminar
     ({ ficha, expediente, pacientes, riesgos: riesgosGlobal, ausentismo, vigilancias,
-       programa: programaGlobal, campanas: campanasGlobal, altas: altasGlobal, citas: misCitas, agenda: agendaMedico }[vista] || ficha)();
+       programa: programaGlobal, campanas: campanasGlobal, altas: altasGlobal, citas: misCitas, agenda: agendaMedico, pendientes }[vista] || ficha)();
   }
 
   const AVISO =
@@ -77,30 +78,10 @@
      =========================================================== */
   let puestosTmp = null;
 
-  function ficha() {
-    /* Candado de consentimiento (nuevo, igual que en Medico ZX): sin
-       consentimiento vigente no se muestra el formulario, se manda al
-       aviso de privacidad. api.js repite esta validación al guardar,
-       por si alguien llega al formulario de otra forma. */
-    if (!D.consentimiento) {
-      main.innerHTML =
-        cab('Mi historia clínica', '') +
-        '<div class="priv">🔒 <div><b>Necesitas otorgar tu consentimiento antes de continuar.</b> ' +
-        'La captura de tu historia clínica requiere tu consentimiento expreso para el tratamiento de datos ' +
-        'personales de salud (LFPDPPP art. 8). Ve a <a href="privacidad.html">Aviso de privacidad</a> para ' +
-        'leerlo y otorgarlo; podrás volver aquí en cuanto lo hagas.</div></div>';
-      return;
-    }
-    const yo = empDe(sesion.id);
-    const c = D.mio || {};
-    if (!puestosTmp) puestosTmp = (c.puestos && c.puestos.length ? JSON.parse(JSON.stringify(c.puestos)) : [filaPuestoVacia()]);
-    const mostrarGO = (c.sexo || (yo.genero === 'F' ? 'Mujer' : 'Hombre')) === 'Mujer';
+  /* Formulario de la historia clínica: lo usa la propia persona (conBoton) y el médico dentro de una ventana. */
+  function htmlFormHistoria(yo, c, mostrarGO, conBoton) {
     const g = c.goa || {};
-
-    main.innerHTML =
-      cab('Mi historia clínica', c.actualizado ? 'Última actualización: ' + fmt(c.actualizado) : 'Aún no has llenado el cuestionario') +
-      AVISO +
-      '<form id="f">' +
+    return '<form id="f">' +
 
       /* ---- 1. Identificación ---- */
       '<div class="card"><div class="card-t">Datos de identificación</div>' +
@@ -162,14 +143,43 @@
           '</div></div>'
         : '') +
 
-      '<div class="btn-row"><button class="btn" type="submit">Guardar historia clínica</button></div>' +
+      (conBoton ? '<div class="btn-row"><button class="btn" type="submit">Guardar historia clínica</button></div>' : '') +
       '</form>';
+  }
+
+  function ficha() {
+    /* Candado de consentimiento (nuevo, igual que en Medico ZX): sin
+       consentimiento vigente no se muestra el formulario, se manda al
+       aviso de privacidad. api.js repite esta validación al guardar,
+       por si alguien llega al formulario de otra forma. */
+    if (!D.consentimiento) {
+      main.innerHTML =
+        cab('Mi historia clínica', '') +
+        '<div class="priv">🔒 <div><b>Necesitas otorgar tu consentimiento antes de continuar.</b> ' +
+        'La captura de tu historia clínica requiere tu consentimiento expreso para el tratamiento de datos ' +
+        'personales de salud (LFPDPPP art. 8). Ve a <a href="privacidad.html">Aviso de privacidad</a> para ' +
+        'leerlo y otorgarlo; podrás volver aquí en cuanto lo hagas.</div></div>';
+      return;
+    }
+    const yo = empDe(sesion.id);
+    const c = D.mio || {};
+    if (!puestosTmp) puestosTmp = (c.puestos && c.puestos.length ? JSON.parse(JSON.stringify(c.puestos)) : [filaPuestoVacia()]);
+    const mostrarGO = (c.sexo || (yo.genero === 'F' ? 'Mujer' : 'Hombre')) === 'Mujer';
+
+    main.innerHTML =
+      cab('Mi historia clínica', c.actualizado ? 'Última actualización: ' + fmt(c.actualizado) : 'Aún no has llenado el cuestionario') +
+      AVISO +
+      htmlFormHistoria(yo, c, mostrarGO, true);
 
     ZX.pie(main, 'Las secciones 1 a 3 las declara el colaborador. Las evaluaciones, dictámenes, riesgos de trabajo, incapacidades y vigilancia los captura únicamente el servicio médico.');
 
+    ligarFormHistoria(true);
+  }
+
+  function ligarFormHistoria(conSubmit) {
     pintaPuestos();
     $('#addPuesto').addEventListener('click', () => { leePuestos(); puestosTmp.push(filaPuestoVacia()); pintaPuestos(); });
-    $('#f').addEventListener('submit', guardarFicha);
+    if (conSubmit) $('#f').addEventListener('submit', guardarFicha);
     const nac = $('#nacimiento');                                       // la edad se calcula al elegir la fecha de nacimiento
     if (nac) nac.addEventListener('input', () => { $('#edadVal').textContent = nac.value ? edad(nac.value) + ' años' : '—'; });
     ['cronicas', 'heredofamiliares', 'consumo', 'riesgosExposicion', 'epp'].forEach(ligarNinguna);
@@ -229,12 +239,11 @@
     }));
   }
 
-  async function guardarFicha(e) {
-    e.preventDefault();
+  function leerFormHistoria() {
     leePuestos();
     const mostrarGO = val('sexo') === 'Mujer';
     const datos = {
-      curp: val('curp').toUpperCase(), nacimiento: val('nacimiento'), sexo: val('sexo'),
+      curp: val('curp').toUpperCase(), nacimiento: val('nacimiento') || null, sexo: val('sexo'),
       jornada: val('jornada'),
       contactoEmergencia: val('contactoEmergencia'), telefonoEmergencia: val('telefonoEmergencia'),
       tipoSanguineo: val('tipoSanguineo'), alergias: val('alergias'),
@@ -251,13 +260,60 @@
         ivsa: val('go_ivsa'), anticonceptivo: val('go_anticonceptivo')
       } : null
     };
-    if (datos.curp && !/^[A-Z0-9]{18}$/.test(datos.curp)) return toast('La CURP debe tener 18 caracteres.', 'wa');
+    if (datos.curp && !/^[A-Z0-9]{18}$/.test(datos.curp)) { toast('La CURP debe tener 18 caracteres.', 'wa'); return null; }
+    return datos;
+  }
+
+  async function guardarFicha(e) {
+    e.preventDefault();
+    const datos = leerFormHistoria(); if (!datos) return;
     try {
       await API.medico.guardarCuestionario(sesion.id, datos);
       toast('Historia clínica guardada.', 'ok');
       puestosTmp = null;
       await refrescar();
     } catch (ex) { toast(ex.message, 'no'); }
+  }
+
+  /* El médico modifica la historia de otra persona (por ejemplo, tras un cambio referido en consulta).
+     La base exige el consentimiento vigente de la persona y deja el rastro en la bitácora. */
+  async function editarHistoriaMedico(empId, encima) {
+    const emp = empDe(empId);
+    let consentimiento = true;
+    try { consentimiento = await API.medico.tieneConsentimiento(empId); } catch (e) { /* de todos modos lo valida la base al guardar */ }
+    if (!consentimiento) {
+      modal({ encima: !!encima, titulo: 'Aún no se puede modificar',
+        cuerpo: '<div class="priv">🔒 <div><b>' + esc(emp.nombre) + ' aún no ha otorgado su consentimiento vigente</b> para el tratamiento de sus datos de salud. ' +
+          'Mientras no lo otorgue, el servicio médico no puede crear ni modificar su historia clínica. Pídele que entre al portal y lo otorgue en «Aviso de privacidad».</div></div>',
+        botones: [{ txt: 'Entendido' }] });
+      return;
+    }
+    let c; try { c = (await API.medico.cuestionario(empId)) || {}; } catch (e) { return toast(e.message, 'no'); }
+    puestosTmp = (c.puestos && c.puestos.length) ? JSON.parse(JSON.stringify(c.puestos)) : [filaPuestoVacia()];
+    const mostrarGO = (c.sexo || (emp.genero === 'F' ? 'Mujer' : 'Hombre')) === 'Mujer';
+    const m = modal({
+      encima: !!encima, ancho: 'lg', titulo: (c.actualizado ? 'Editar' : 'Crear') + ' historia clínica · ' + emp.nombre,
+      alCerrar: () => { puestosTmp = null; },
+      cuerpo: '<div class="priv">✏️ <div>Estás modificando la historia de <b>' + esc(emp.nombre) + '</b>. El cambio queda en la bitácora con tu nombre y el motivo que escribas.</div></div>' +
+        htmlFormHistoria(emp, c, mostrarGO, false) +
+        '<div class="field" style="margin-top:12px"><label for="motivoCambio">Motivo del cambio (obligatorio)</label>' +
+        '<input id="motivoCambio" maxlength="160" placeholder="Ej. Cambio referido en la consulta del ' + esc(fmt(hoyISO())) + '"></div>',
+      botones: [
+        { txt: 'Cancelar', clase: 'gh' },
+        { txt: 'Guardar cambios', accion: async (b) => {
+            const datos = leerFormHistoria(); if (!datos) return;
+            const motivo = ($('#motivoCambio', b).value || '').trim();
+            if (motivo.length < 5) return toast('Escribe el motivo del cambio (por ejemplo, «Cambio referido en consulta»).', 'wa');
+            try {
+              await API.medico.guardarCuestionarioMedico(empId, datos, motivo);
+              cerrarModal(); toast('Historia clínica actualizada.', 'ok');
+              if (encima) await recargar(); else { tabExp = 'ficha'; await volverExpediente(empId); }
+            } catch (ex) { toast(ex.message, 'no'); }
+          } }
+      ]
+    });
+    ligarFormHistoria(false);
+    $('#f', m).addEventListener('submit', e => e.preventDefault());
   }
 
   /* ===========================================================
@@ -321,7 +377,7 @@
     if (esOtro) {
       $('#volver').addEventListener('click', () => { pacienteSel = null; render(); });
       $('#nueva').addEventListener('click', () => popupConsulta(empId));
-      $('#imprimir').addEventListener('click', () => window.print());
+      $('#imprimir').addEventListener('click', () => { API.auditoria.registrar('expediente.imprimir', empId, null, 'Impresión del expediente'); window.print(); });
     }
     pintaTab(ctx);
   }
@@ -333,17 +389,22 @@
       rt: tabRT, inc: tabInc, docs: tabDocs, vig: tabVig, vac: tabVac, log: tabLog, analisis: tabAnalisis
     }[tabExp] || tabFicha)(ctx);
     bindTab(ctx);
-    bindDocs(c);
+    bindDocs(c, ctx);
     ZX.pie(c, notaTab());
   }
 
   /* «Ver» abre el PDF en otra pestaña y «Descargar» lo baja. El enlace es temporal (10 min) y sólo lo entrega la base de datos
      a quien corresponde (el médico o la propia persona). La pestaña se abre ANTES de pedir el enlace para que el navegador no la bloquee. */
-  function bindDocs(c) {
+  function bindDocs(c, ctx) {
+    const chkBaja = $('#verBaja', c);
+    if (chkBaja) chkBaja.addEventListener('change', () => { verDocsBaja = chkBaja.checked; pintaTab(ctx); });
+    $$('[data-repl]', c).forEach(b => b.addEventListener('click', () => popupSubirDocumento(ctx.empId, ctx.docs.find(d => d.id === b.dataset.repl))));
+    $$('[data-elim]', c).forEach(b => b.addEventListener('click', () => popupEliminarDocumento(ctx.docs.find(d => d.id === b.dataset.elim), ctx.empId)));
     $$('[data-ver],[data-bajar]', c).forEach(b => b.addEventListener('click', async () => {
       const bajar = b.dataset.bajar !== undefined;
       const w = bajar ? null : window.open('', '_blank');
       try {
+        if (ctx && ctx.esOtro) API.auditoria.registrar('documento.consultar', ctx.empId, null, (b.dataset.nom || '').slice(0, 120));
         const url = await API.medico.urlDocumento(bajar ? b.dataset.bajar : b.dataset.ver, bajar ? ((b.dataset.nom || 'documento').replace(/[^\p{L}\p{N} ._-]/gu, '').trim() || 'documento') + '.pdf' : undefined);
         if (bajar) { const a = document.createElement('a'); a.href = url; a.download = ''; document.body.appendChild(a); a.click(); a.remove(); }
         else if (w) w.location.href = url; else window.location.href = url;
@@ -449,11 +510,11 @@
   /* ---------- Tab: Historial de cambios ---------- */
   function tabLog(x) {
     return '<div class="priv">🧾 <div>La bitácora registra <b>quién</b> hizo <b>qué</b> y <b>cuándo</b> sobre este expediente. ' +
-      'La escribe el servidor y no puede modificarse desde el portal. Hoy cubre cambios de acceso, consentimiento y solicitudes ' +
-      'ARCO; el resto de las operaciones clínicas se irán sumando.</div></div>' +
+      'La escribe el servidor y no puede modificarse desde el portal. Cubre los cambios a la historia clínica, consultas, evaluaciones, riesgos, incapacidades, vacunas, documentos y seguimientos ' +
+      '(sólo se guardan los <b>nombres de los campos</b> tocados, nunca su contenido clínico), además de las aperturas del expediente y de sus documentos, el acceso, el consentimiento y las solicitudes ARCO.</div></div>' +
       tabla([
-        { t: 'Fecha y hora', k: 'fecha' }, { t: 'Usuario', v: l => nombreDe(l.usuario) },
-        { t: 'Acción', k: 'accion' }, { t: 'Registro', k: 'entidad' }, { t: 'Detalle', k: 'detalle' }
+        { t: 'Fecha y hora', v: l => fmtDT(l.fecha) }, { t: 'Usuario', v: l => nombreDe(l.usuario) },
+        { t: 'Acción', v: l => ZX.etiquetaAccion(l.accion) }, { t: 'Registro', k: 'entidad' }, { t: 'Detalle', k: 'detalle' }
       ], x.log, { vacio: 'Sin movimientos registrados para este expediente.' });
   }
 
@@ -461,8 +522,12 @@
   /* ---------- Tab: Ficha ---------- */
   function tabFicha(x) {
     const c = x.cue, e = x.emp;
-    if (!c.actualizado) return '<div class="tbl-wrap"><div class="empty">El colaborador aún no ha llenado su historia clínica.</div></div>';
-    return '<div class="card"><div class="card-t">Datos de identificación</div><div class="frow">' +
+    const quien = !c.actualizado ? '' : (c.actualizadoPor ? (String(c.actualizadoPor) === String(e.id) ? 'el propio colaborador' : 'Servicio médico') : 'carga inicial de registros');
+    const cabecera = '<div class="btn-row" style="margin-bottom:12px;align-items:center">' +
+      (c.actualizado ? '<span class="page-sub">Última actualización: <b>' + esc(fmt(c.actualizado)) + '</b> · ' + esc(quien) + '</span>' : '') +
+      (x.esOtro ? '<button class="btn ac sm" data-act="editHistoria">' + (c.actualizado ? '✏️ Editar historia clínica' : '＋ Crear historia clínica') + '</button>' : '') + '</div>';
+    if (!c.actualizado) return cabecera + '<div class="tbl-wrap"><div class="empty">El colaborador aún no ha llenado su historia clínica.</div></div>';
+    return cabecera + '<div class="card"><div class="card-t">Datos de identificación</div><div class="frow">' +
         ro('Número de empleado', e.id) + ro('Nombre completo', e.nombre) + ro('Puesto', e.puesto) +
         ro('Dirección', e.direccion) + ro('Departamento', e.departamento) + ro('Fecha de ingreso', fmt(e.ingreso)) + ro('CURP', c.curp) +
         ro('Fecha de nacimiento', fmt(c.nacimiento || e.nacimiento)) + ro('Edad', (c.nacimiento || e.nacimiento) ? edad(c.nacimiento || e.nacimiento) + ' años' : '—') +
@@ -641,17 +706,24 @@
   }
 
   /* ---------- Tab 8: Documentos ---------- */
+  let verDocsBaja = false;
   function tabDocs(x) {
+    const vigentes = x.docs.filter(d => (d.estado || 'vigente') === 'vigente');
+    const lista = (x.esOtro && verDocsBaja) ? x.docs : vigentes;
+    const nBaja = x.docs.length - vigentes.length;
+    const estadoChip = d => d.estado === 'reemplazado' ? ' <span class="chip nt">Reemplazado</span>' : d.estado === 'eliminado' ? ' <span class="chip no" title="' + esc(d.motivoBaja || '') + '">Eliminado</span>' : '';
     return ZX.notaConservacion() +
-      (x.esOtro ? '<div class="btn-row" style="margin-bottom:14px"><button class="btn" data-act="nuevoDoc">＋ Registrar documento</button></div>' : '') +
+      (x.esOtro ? '<div class="btn-row" style="margin-bottom:14px"><button class="btn" data-act="subirDoc">⬆ Subir documento</button></div>' : '') +
+      (x.esOtro && nBaja ? '<label class="chk-linea"><input type="checkbox" id="verBaja"' + (verDocsBaja ? ' checked' : '') + '> Mostrar reemplazados y eliminados (' + nBaja + ')</label>' : '') +
       tabla([
-        { t: 'Tipo', k: 'tipo' }, { t: 'Archivo', k: 'nombre' }, { t: 'Fecha', v: d2 => d2.fecha ? fmt(d2.fecha) : '—' },
+        { t: 'Tipo', k: 'tipo' }, { t: 'Archivo', html: d2 => esc(d2.nombre) + estadoChip(d2) }, { t: 'Fecha', v: d2 => d2.fecha ? fmt(d2.fecha) : '—' },
         { t: 'Tamaño', k: 'tam' }, { t: 'Notas', v: d2 => d2.notas || '—' },
-        { t: '', html: d2 => d2.ruta
-            ? '<div class="btn-row"><button class="btn sm" data-ver="' + esc(d2.ruta) + '">Ver</button>' +
-              '<button class="btn gh sm" data-bajar="' + esc(d2.ruta) + '" data-nom="' + esc(d2.nombre) + '">Descargar</button></div>'
-            : '<span class="chip nt">Sin archivo</span>' }
-      ], x.docs, { vacio: 'Sin documentos ni evidencias registradas.' });
+        { t: '', html: d2 => !d2.ruta ? '<span class="chip nt">Sin archivo</span>'
+            : '<div class="btn-row"><button class="btn sm" data-ver="' + esc(d2.ruta) + '" data-nom="' + esc(d2.nombre) + '">Ver</button>' +
+              '<button class="btn gh sm" data-bajar="' + esc(d2.ruta) + '" data-nom="' + esc(d2.nombre) + '">Descargar</button>' +
+              (x.esOtro && (d2.estado || 'vigente') === 'vigente'
+                ? '<button class="btn gh sm" data-repl="' + esc(d2.id) + '">Reemplazar</button><button class="btn gh sm" data-elim="' + esc(d2.id) + '">Eliminar</button>' : '') + '</div>' }
+      ], lista, { vacio: 'Sin documentos ni evidencias registradas.', filaAttr: d2 => (d2.estado || 'vigente') !== 'vigente' ? 'class="doc-baja"' : '' });
   }
 
   /* ---------- Tab 9: Vigilancia ---------- */
@@ -683,7 +755,8 @@
       nuevaEval: () => popupEvaluacion(ctx.empId),
       nuevoRT: () => popupRiesgo(ctx.empId),
       nuevaInc: () => popupIncapacidad(ctx.empId),
-      nuevoDoc: () => popupDocumento(ctx.empId),
+      editHistoria: () => editarHistoriaMedico(ctx.empId),
+      subirDoc: () => popupSubirDocumento(ctx.empId),
       editVig: () => popupVigilancia(ctx.empId, ctx.vig),
       nuevoCaso: () => popupCaso(ctx.empId),
       nuevaVac: () => popupVacuna(ctx.empId),
@@ -699,31 +772,84 @@
   /* ===========================================================
      VISTAS GLOBALES DEL MÉDICO
      =========================================================== */
-  let busca = '';
+  let busca = '', filtroHist = '';
+  const MESES_HISTORIA = 12;               // una historia con más de 12 meses sin actualizarse se considera desactualizada
   function pacientes() {
-    const lista = D.emps.filter(e => !busca || (e.nombre + ' ' + e.id + ' ' + (e.direccion || '') + ' ' + (e.departamento || '')).toLowerCase().indexOf(busca.toLowerCase()) >= 0);
+    const mapaH = {}; (D.historias || []).forEach(h => { mapaH[h.empleado] = h; });
+    const limite = new Date(); limite.setMonth(limite.getMonth() - MESES_HISTORIA);
+    const estadoH = e => { const h = mapaH[e.id]; if (!h || !h.actualizado) return 'sin'; return new Date(h.actualizado) >= limite ? 'actualizada' : 'desactualizada'; };
+    const cuenta = { actualizada: 0, desactualizada: 0, sin: 0 }; D.emps.forEach(e => { cuenta[estadoH(e)]++; });
+    const lista = D.emps.filter(e => (!busca || ZX.coincide(e.nombre + ' ' + e.id + ' ' + (e.direccion || '') + ' ' + (e.departamento || ''), busca)) && (!filtroHist || estadoH(e) === filtroHist));
     main.innerHTML =
-      cab('Pacientes', D.emps.length + ' colaboradores con expediente ocupacional') +
+      cab('Pacientes', lista.length + (lista.length === D.emps.length ? '' : ' de ' + D.emps.length) + ' colaboradores con expediente ocupacional') +
       AVISO +
       '<div class="filters"><div class="field" style="min-width:290px"><label>Buscar por nombre, número o departamento</label>' +
-        '<input id="q" value="' + esc(busca) + '" placeholder="Ej. nombre, nómina o departamento"></div></div>' +
+        '<input id="q" value="' + esc(busca) + '" placeholder="Ej. nombre, nómina o departamento"></div>' +
+        '<div class="field"><label>Historia clínica</label><select id="fh">' +
+          opts([['', 'Todas'], ['actualizada', 'Actualizada (' + cuenta.actualizada + ')'], ['desactualizada', 'Desactualizada (' + cuenta.desactualizada + ')'], ['sin', 'Sin historia (' + cuenta.sin + ')']], filtroHist) +
+        '</select></div></div>' +
       tabla([
         { t: 'Nº', k: 'id' }, { t: 'Nombre', k: 'nombre' }, { t: 'Departamento', k: 'departamento' },
         { t: 'Dictamen', html: e => { const ev = D.evaluaciones.filter(x => x.empleado === e.id).sort(desc('fecha'))[0];
             return ev ? chipDictamen(ev) : '<span class="chip nt">Sin evaluación</span>'; } },
-        { t: 'Consultas', v: e => D.consultas.filter(c => c.empleado === e.id).length },
-        { t: 'Riesgos', v: e => D.riesgos.filter(c => c.empleado === e.id).length },
+        { t: 'Historia clínica', html: e => { const st = estadoH(e);
+            return st === 'sin' ? '<span class="chip nt">Sin historia</span>'
+              : '<span class="chip ' + (st === 'actualizada' ? 'ok' : 'wa') + '">' + (st === 'actualizada' ? 'Actualizada' : 'Desactualizada') + '</span> <span class="page-sub">' + esc(fmt(mapaH[e.id].actualizado)) + '</span>'; } },
         { t: 'Incap. vigente', html: e => D.incapacidades.some(i => i.empleado === e.id && i.estado === 'vigente')
             ? '<span class="chip no">Sí</span>' : '<span class="chip nt">No</span>' },
         { t: '', html: e => '<div class="btn-row"><button class="btn sm" data-exp="' + esc(e.id) + '">Expediente</button>' +
                             '<button class="btn ac sm" data-con="' + esc(e.id) + '">Consulta</button></div>' }
       ], lista, { vacio: 'Sin coincidencias.' });
 
-    ZX.pie(main, 'Acceso restringido al personal del servicio médico. Cada apertura de expediente debe quedar registrada en la bitácora de auditoría del servidor.');
+    ZX.pie(main, 'Acceso restringido al personal del servicio médico. Cada apertura de expediente queda registrada en la bitácora de auditoría del servidor. «Actualizada» = historia clínica puesta al día en los últimos ' + MESES_HISTORIA + ' meses.');
     const q = $('#q');
     q.addEventListener('input', () => { busca = q.value; const p = q.selectionStart; pacientes(); const n = $('#q'); n.focus(); n.setSelectionRange(p, p); });
+    $('#fh').addEventListener('change', e => { filtroHist = e.target.value; pacientes(); });
     $$('[data-exp]').forEach(b => b.addEventListener('click', () => { tabExp = 'ficha'; verExpediente(b.dataset.exp, true); }));
     $$('[data-con]').forEach(b => b.addEventListener('click', () => popupConsulta(b.dataset.con)));
+  }
+
+  /* ---------- Pendientes del médico (Doctor → Pendientes) ---------- */
+  let pendSel = '';
+  async function pendientes() {
+    main.innerHTML = cab('Pendientes', 'Lo que requiere atención del servicio médico') + '<div class="empty">Cargando…</div>';
+    let P;
+    try { P = await API.medico.pendientes(); }
+    catch (e) { main.innerHTML = cab('Pendientes', '') + '<div class="empty">No se pudieron cargar los pendientes: ' + esc(e.message) + '</div>'; return; }
+    const CATS = [
+      ['citas_hoy', 'Citas de hoy', 'Confirmadas, aún sin atender', ''],
+      ['casos_vencidos', 'Casos con valoración vencida', 'Seguimiento atrasado', 'alto'],
+      ['casos_sin_valorar', 'Casos por valorar', 'Desviaciones sin valoración médica', 'medio'],
+      ['evaluaciones_vencidas', 'Exámenes programados vencidos', 'Programados y sin realizar', 'alto'],
+      ['evaluaciones_por_vencer', 'Evaluaciones por vencer', 'Vencen en 30 días o ya vencieron', 'medio'],
+      ['restricciones_por_revisar', 'Restricciones por revisar', 'Vencen en 30 días', 'medio'],
+      ['vigilancia_por_valorar', 'Atención y Control de Salud', 'Valoraciones en los próximos 30 días', 'medio'],
+      ['incapacidades_vigentes', 'Incapacidades vigentes', 'Personas ausentes hoy', ''],
+      ['riesgos_abiertos', 'Riesgos de trabajo sin cerrar', 'Requieren seguimiento', 'medio']
+    ];
+    const total = CATS.reduce((n, c) => n + (P[c[0]] || []).length, 0);
+    const H = P.historias || {}, hPend = (H.desactualizadas || 0) + (H.sin_historia || 0);
+    if (!pendSel || !(P[pendSel] || []).length) { const primero = CATS.find(c => (P[c[0]] || []).length); pendSel = primero ? primero[0] : ''; }
+    main.innerHTML =
+      cab('Pendientes', total ? total + ' asuntos requieren atención' : 'Sin asuntos pendientes') +
+      '<div class="pend-grid">' + CATS.map(c => { const n = (P[c[0]] || []).length;
+        return '<button type="button" class="pend-card ' + (n ? c[3] : '') + (pendSel === c[0] ? ' on' : '') + '" data-pend="' + c[0] + '"' + (n ? '' : ' disabled style="opacity:.55;cursor:default"') + '>' +
+          '<span class="pv' + (n ? '' : ' pend-ok') + '">' + (n || '✓') + '</span><span class="pl">' + esc(c[1]) + '</span><span class="pd">' + esc(c[2]) + '</span></button>'; }).join('') +
+        '<div class="pend-card ' + (hPend ? 'medio' : '') + '" style="cursor:default"><span class="pv' + (hPend ? '' : ' pend-ok') + '">' + (hPend || '✓') + '</span><span class="pl">Historias clínicas por actualizar</span>' +
+          '<span class="pd">' + (H.desactualizadas || 0) + ' desactualizadas · ' + (H.sin_historia || 0) + ' sin historia</span>' +
+          '<span class="btn-row" style="margin-top:8px"><button class="btn gh sm" data-hist="desactualizada">Ver desactualizadas</button><button class="btn gh sm" data-hist="sin">Ver sin historia</button></span></div>' +
+      '</div>' +
+      (pendSel ? '<h2 class="card-t" style="margin:6px 0 10px">' + esc(CATS.find(c => c[0] === pendSel)[1]) + '</h2>' +
+        tabla([
+          { t: 'Colaborador', k: 'nombre' }, { t: 'Departamento', v: r => r.departamento || '—' }, { t: 'Detalle', k: 'detalle' },
+          { t: '', html: r => '<div class="btn-row"><button class="btn sm" data-exp="' + esc(r.empleado) + '">Expediente</button>' + (pendSel === 'citas_hoy' ? '<button class="btn ac sm" data-con="' + esc(r.empleado) + '">Consulta</button>' : '') + '</div>' }
+        ], P[pendSel] || [], { vacio: 'Nada pendiente en esta categoría.' }) :
+        '<div class="empty">✓ No hay asuntos pendientes. Las historias clínicas por actualizar están arriba.</div>');
+    ZX.pie(main, 'Calculado en el servidor al abrir esta pantalla. Los recordatorios por correo se agregarán al final, junto con los demás avisos del portal.');
+    $$('[data-pend]').forEach(b => b.addEventListener('click', () => { pendSel = b.dataset.pend; pendientes(); }));
+    $$('[data-hist]').forEach(b => b.addEventListener('click', () => { filtroHist = b.dataset.hist; busca = ''; nav.ir('pacientes'); }));
+    $$('[data-exp]').forEach(b => b.addEventListener('click', () => { tabExp = 'ficha'; verExpediente(b.dataset.exp, true); }));
+    $$('[data-con]').forEach(b => b.addEventListener('click', () => popupConsulta(b.dataset.con, { volver: true })));
   }
 
   let fTipoRT = '';
@@ -850,6 +976,7 @@
         '</fieldset>',
       botones: [
         { txt: 'Cancelar', clase: 'gh' },
+        { txt: 'Editar historia clínica', clase: 'gh', accion: () => editarHistoriaMedico(empId, true) },
         { txt: 'Guardar consulta', accion: async (b) => {
             const motivo = $('#motivo', b).value.trim();
             const ex = {}; CAT.exploracion.forEach(kk => { ex[kk] = $('#ex_' + kk, b).value.trim(); });
@@ -866,7 +993,7 @@
                 exploracion: ex,
                 diagnostico: $('#dx', b).value.trim(), tratamiento: $('#tx', b).value.trim(),
                 evolucion: $('#evolucion', b).value.trim(), referencia: $('#referencia', b).value.trim(),
-                estudios: $('#estudios', b).value.trim(), proximaCita: proxima ? proxima.fecha : ''
+                estudios: $('#estudios', b).value.trim(), proximaCita: proxima ? proxima.fecha : null
               });
               guardada = true; cerrarModal(); toast('Consulta agregada al expediente.', 'ok');
               /* la cita de hoy de esta persona queda atendida (sin tocar la que se agendó como próxima) */
@@ -1096,34 +1223,64 @@
     $('#finInc', body).addEventListener('change', calc);
   }
 
-  function popupDocumento(empId) {
-    modal({
-      titulo: 'Registrar documento o evidencia',
+  /* Subir (o reemplazar) un documento: PDF, JPG o PNG de hasta 20 MB. Se valida el contenido real del archivo. */
+  function popupSubirDocumento(empId, reemplaza) {
+    let archivo = null;
+    const m = modal({
+      titulo: reemplaza ? 'Reemplazar documento' : 'Subir documento', ancho: 'lg',
       cuerpo:
-        '<div class="priv">📎 <div>Por ahora sólo se registra el <b>metadato</b>. La carga del archivo (con validación de tipo, antivirus, cifrado y bitácora de acceso) aún no está conectada.</div></div>' +
+        (reemplaza ? '<div class="priv">♻️ <div>Se reemplazará <b>' + esc(reemplaza.nombre) + '</b>. El archivo anterior se conserva marcado como «reemplazado».</div></div>' : '') +
+        '<div class="drop" id="dz"><b>Arrastra el archivo aquí o haz clic para elegirlo</b><span class="page-sub">PDF, JPG o PNG · máximo 20 MB</span></div>' +
+        '<input id="docFile" type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" hidden>' +
+        '<div id="docSel" class="page-sub" style="margin:-4px 0 12px"></div>' +
         '<div class="frow">' +
-          selc('tipoDoc', 'Tipo de documento', CAT.tiposDocMedico.map(t => [t, t])) +
-          txt('nomDoc', 'Nombre del archivo', '') +
+          selc('tipoDoc', 'Tipo de documento', CAT.tiposDocMedico.map(t => [t, t]), reemplaza ? reemplaza.tipo : undefined) +
+          txt('nomDoc', 'Nombre que se mostrará', reemplaza ? reemplaza.nombre : '') +
           txt('fechaDoc', 'Fecha del documento', hoyISO(), 'date') +
         '</div>' + txtF('notasDoc', 'Notas'),
       botones: [
         { txt: 'Cancelar', clase: 'gh' },
-        { txt: 'Registrar', accion: async (b) => {
+        { txt: reemplaza ? 'Reemplazar' : 'Subir', accion: async (b) => {
+            if (!archivo) return toast('Elige un archivo.', 'wa');
             const n = $('#nomDoc', b).value.trim();
-            if (!n) return toast('Escribe el nombre del archivo.', 'wa');
+            if (!n) return toast('Escribe el nombre del documento.', 'wa');
+            const meta = { tipo: $('#tipoDoc', b).value, nombre: n, fecha: $('#fechaDoc', b).value, notas: $('#notasDoc', b).value.trim() };
+            const btn = b.closest('.modal').querySelector('.mo-foot .btn:last-child'); if (btn) { btn.disabled = true; btn.textContent = 'Subiendo…'; }
             try {
-              await API.medico.guardarDocumento({
-                empleado: empId, tipo: $('#tipoDoc', b).value, nombre: n,
-                fecha: $('#fechaDoc', b).value, notas: $('#notasDoc', b).value.trim()
-              });
-              cerrarModal(); toast('Documento registrado.', 'ok');
+              if (reemplaza) await API.medico.reemplazarDocumento(reemplaza, archivo, meta); else await API.medico.subirDocumento(empId, archivo, meta);
+              cerrarModal(); toast(reemplaza ? 'Documento reemplazado.' : 'Documento subido.', 'ok');
               tabExp = 'docs'; await volverExpediente(empId);
-            } catch (e) { toast(e.message, 'no'); }
+            } catch (ex) { toast(ex.message, 'no'); if (btn) { btn.disabled = false; btn.textContent = reemplaza ? 'Reemplazar' : 'Subir'; } }
+          } }
+      ]
+    });
+    const dz = $('#dz', m), inp = $('#docFile', m);
+    const elegir = f => { archivo = f; $('#docSel', m).textContent = f ? f.name + ' · ' + Math.max(1, Math.round(f.size / 1024)) + ' KB' : ''; if (f && !$('#nomDoc', m).value) $('#nomDoc', m).value = f.name.replace(/\.[A-Za-z0-9]+$/, ''); };
+    dz.addEventListener('click', () => inp.click());
+    inp.addEventListener('change', () => elegir(inp.files[0] || null));
+    ['dragenter', 'dragover'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('on'); }));
+    ['dragleave', 'drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('on'); }));
+    dz.addEventListener('drop', e => { if (e.dataTransfer.files[0]) elegir(e.dataTransfer.files[0]); });
+  }
+
+  /* Eliminar = baja lógica con motivo. El archivo se conserva como evidencia; la persona deja de verlo. */
+  function popupEliminarDocumento(doc, empId) {
+    if (!doc) return;
+    modal({
+      titulo: 'Eliminar documento',
+      cuerpo: '<div class="priv">🗑️ <div>Vas a eliminar <b>' + esc(doc.nombre) + '</b>. Dejará de verse para la persona; el archivo se conserva como evidencia y la baja queda en la bitácora.</div></div>' +
+        '<div class="field"><label for="motBaja">Motivo (obligatorio)</label><input id="motBaja" maxlength="160" placeholder="Ej. Documento cargado en el expediente equivocado"></div>',
+      botones: [
+        { txt: 'Cancelar', clase: 'gh' },
+        { txt: 'Eliminar', accion: async (b) => {
+            const mot = $('#motBaja', b).value.trim();
+            if (mot.length < 5) return toast('Escribe el motivo.', 'wa');
+            try { await API.medico.eliminarDocumento(doc.id, mot); cerrarModal(); toast('Documento eliminado.', 'ok'); tabExp = 'docs'; await volverExpediente(empId); }
+            catch (ex) { toast(ex.message, 'no'); }
           } }
       ]
     });
   }
-
   function popupVigilancia(empId, v) {
     modal({
       titulo: 'Programa de vigilancia · ' + empDe(empId).nombre, ancho: 'lg',

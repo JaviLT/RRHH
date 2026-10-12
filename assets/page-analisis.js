@@ -212,7 +212,7 @@
   function resultados() {
     const lista = D.res.filter(r =>
       (!fVal || r.valoracion === fVal) &&
-      (!qr || (nombreDe(r.empleado) + ' ' + r.empleado + ' ' + r.analisis).toLowerCase().indexOf(qr.toLowerCase()) >= 0))
+      (!qr || ZX.coincide(nombreDe(r.empleado) + ' ' + r.empleado + ' ' + r.analisis, qr)))
       .sort((a, b) => String(b.fechaResultado).localeCompare(String(a.fechaResultado)));
     const cols = [
       { t: 'Folio', k: 'id' },

@@ -87,7 +87,7 @@
   function tablero() {
     const lista = D.filas.filter(f =>
       (!fDic || f.dictamen === fDic) &&
-      (!q || (f.nombre + ' ' + f.id + ' ' + f.direccion + ' ' + (f.departamento || '')).toLowerCase().indexOf(q.toLowerCase()) >= 0));
+      (!q || ZX.coincide(f.nombre + ' ' + f.id + ' ' + f.direccion + ' ' + (f.departamento || ''), q)));
     const conRestr = D.filas.filter(f => f.restricciones && f.restricciones.toLowerCase() !== 'ninguna');
     const vencidos = D.filas.filter(f => f.vigencia && f.vigencia < hoyISO());
     const sinEval = D.filas.filter(f => !f.dictamen);

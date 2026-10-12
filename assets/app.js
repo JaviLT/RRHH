@@ -6,7 +6,7 @@
   'use strict';
 
   const API = global.ZX_API;
-  const VERSION = '2.7.0';
+  const VERSION = '2.8.0';
 
   /* ---------------- Tipografía de marca ----------------
      El manual de marca pide Poppins con fallback a Segoe UI. Cargarla con un
@@ -46,6 +46,7 @@
 
     { id: 'medico', grupo: 'clinico',     nombre: 'Servicio médico',   ico: '🩺', url: 'medico.html',     roles: '*',
       desc: 'Tu historia clínica, tu expediente ocupacional y tus citas con el médico de empresa.' },
+    { id: 'cuenta', nombre: 'Mi cuenta', ico: '👤', url: 'cuenta.html', roles: '*', oculto: true, desc: 'Contraseña y verificación en dos pasos.' },
     /* Doctor: el espacio de trabajo del médico (pacientes, agenda y consultas). Sin roles fijos: lo da
        el perfil que lo traiga entre sus módulos (Salud Ocupacional). Servicio médico queda para los empleados. */
     { id: 'doctor', grupo: 'clinico',     nombre: 'Doctor',            ico: '👨‍⚕️', url: 'doctor.html',
@@ -357,6 +358,8 @@
   function requiereSesion(moduloId) {
     const s = sesionEfectiva();
     if (!s) { location.replace('index.html'); return null; }
+    /* Contraseña temporal: hasta que la persona la cambie sólo puede entrar a «Mi cuenta». */
+    if (s.claveCambiada === false && !/cuenta\.html$/.test(location.pathname)) { location.replace('cuenta.html?cambio=1'); return null; }
     if (moduloId && !puede(s, moduloId)) {
       const mod = MODULOS.find(m => m.id === moduloId) || {};
       const desactivado = mod.id && !moduloActivo(mod);
@@ -397,6 +400,84 @@
     if (items.length === 1) return '<nav class="tb-nav tb-solo" aria-label="Accesos rápidos">' + botones + '</nav>';
     return '<nav class="tb-nav" aria-label="Accesos rápidos">' + botones + '</nav>' +
       '<details class="tb-more"><summary aria-label="Accesos rápidos">＋ Solicitar</summary><div class="tb-menu">' + botones + '</div></details>';
+  }
+
+  /* ---- Cierre de sesión por inactividad (datos de salud: no se deja una sesión abierta sin uso) ---- */
+  const INACTIVIDAD_MIN = 20;
+  function iniciarInactividad() {
+    const limite = (+sessionStorage.getItem('zx_inactividad_prueba_seg') / 60) || INACTIVIDAD_MIN;     // la clave de prueba sólo existe en las pruebas del equipo
+    let ultimo = Date.now(), avisado = false;
+    const mover = () => { ultimo = Date.now(); avisado = false; };
+    ['mousemove', 'keydown', 'click', 'touchstart', 'scroll'].forEach(ev => document.addEventListener(ev, mover, { passive: true }));
+    setInterval(() => {
+      const min = (Date.now() - ultimo) / 60000;
+      if (min >= limite) { API.cerrarSesion(); location.replace('index.html?expirada=1'); }
+      else if (min >= limite - Math.min(1, limite / 4) && !avisado) { avisado = true; toast('Tu sesión se cerrará en breve por inactividad. Mueve el ratón o toca la pantalla para continuar.', 'wa'); }
+    }, 5000);
+  }
+
+  /* ---- Búsqueda: sin acentos ni mayúsculas, y todas las palabras deben coincidir ---- */
+  const normBus = (s) => String(s == null ? '' : s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const coincide = (texto, consulta) => { const t = normBus(texto); return normBus(consulta).split(/\s+/).filter(Boolean).every(w => t.indexOf(w) >= 0); };
+
+  /* Cuadro de búsqueda automático para toda tabla que liste personas (encabezado Nombre/Colaborador/Usuario…) y tenga varias filas. */
+  const COL_PERSONA = /^(nombre|nombre completo|colaborador|empleado|paciente|persona|usuario|afectado|jefe)$/i;
+  const COL_BUSCABLE = /nombre|colaborador|empleado|paciente|persona|n[úu]mero|^n[º°o]\.?$|n[óo]mina|folio|departamento|puesto|[áa]rea|direcci[óo]n|an[áa]lisis|programa|motivo|acci[óo]n|usuario|afectado|jefe|turno/i;
+  const COL_ROTULO = /nombre|colaborador|empleado|paciente|persona|n[úu]mero|^n[º°o]\.?$|n[óo]mina|folio|departamento|puesto|[áa]rea|direcci[óo]n|an[áa]lisis|programa|motivo|acci[óo]n|usuario|jefe/i;
+  function activarBuscador(tb, heads) {
+    const wrap = tb.closest('.tbl-wrap');
+    const cols = heads.map((h, i) => COL_BUSCABLE.test(h) ? i : -1).filter(i => i >= 0);
+    const filas = Array.prototype.slice.call(tb.tBodies[0].rows);
+    const cache = filas.map(r => normBus(cols.map(i => r.cells[i] ? r.cells[i].textContent : '').join(' ')));
+    const clave = 'zx_buscar:' + location.pathname + ':' + heads.join('|');
+    const rotulos = heads.filter(h => COL_ROTULO.test(h)).map(h => h.toLowerCase()).filter((h, i, a) => a.indexOf(h) === i).slice(0, 4);
+    const caja = document.createElement('div'); caja.className = 'buscador';
+    caja.innerHTML = '<span class="bus-ico" aria-hidden="true">🔎</span><input type="search" autocomplete="off" aria-label="Buscar en la tabla" placeholder="Buscar por ' +
+      esc(rotulos.length > 1 ? rotulos.slice(0, -1).join(', ') + ' o ' + rotulos[rotulos.length - 1] : (rotulos[0] || 'nombre')) + '">' +
+      '<button type="button" class="bus-x" aria-label="Limpiar búsqueda" hidden>✕</button><span class="bus-n"></span>';
+    wrap.parentNode.insertBefore(caja, wrap);
+    const inp = caja.querySelector('input'), x = caja.querySelector('.bus-x'), n = caja.querySelector('.bus-n');
+    let vacio = null;
+    const aplicar = () => {
+      const q = normBus(inp.value).split(/\s+/).filter(Boolean); let vis = 0;
+      filas.forEach((r, i) => { const ok = q.every(w => cache[i].indexOf(w) >= 0); r.hidden = !ok; if (ok) vis++; });
+      x.hidden = !q.length;
+      n.textContent = q.length ? 'Mostrando ' + vis + ' de ' + filas.length : filas.length + ' registros';
+      if (vacio) { vacio.remove(); vacio = null; }
+      if (q.length && !vis) { vacio = document.createElement('tr'); vacio.className = 'bus-vacio'; vacio.innerHTML = '<td colspan="' + heads.length + '">Sin coincidencias para «' + esc(inp.value.trim()) + '».</td>'; tb.tBodies[0].appendChild(vacio); }
+      try { sessionStorage.setItem(clave, inp.value); } catch (e) {}
+    };
+    inp.addEventListener('input', aplicar);
+    inp.addEventListener('keydown', ev => { if (ev.key === 'Escape' && inp.value) { inp.value = ''; aplicar(); } });
+    x.addEventListener('click', () => { inp.value = ''; aplicar(); inp.focus(); });
+    try { inp.value = sessionStorage.getItem(clave) || ''; } catch (e) {}
+    tb.dataset.buscable = '1'; aplicar();
+  }
+  function activarBuscadores() {
+    const main = document.getElementById('zx-main'); if (!main) return;
+    let t = null;
+    const pasar = () => {
+      if (main.querySelector('#q')) return;                              // la vista ya trae su propio buscador
+      Array.prototype.forEach.call(main.querySelectorAll('.tbl-wrap table'), tb => {
+        if (tb.dataset.buscable || tb.closest('[data-nobuscar]') || tb.closest('#tabc') || !tb.tHead || !tb.tBodies[0] || !tb.tHead.rows[0]) return;
+        const heads = Array.prototype.map.call(tb.tHead.rows[0].cells, c => c.textContent.trim());
+        if (!heads.some(h => COL_PERSONA.test(h))) return;
+        if (tb.tBodies[0].rows.length < 8 && !tb.hasAttribute('data-buscar')) return;
+        activarBuscador(tb, heads);
+      });
+    };
+    new MutationObserver(() => { clearTimeout(t); t = setTimeout(pasar, 60); }).observe(main, { childList: true, subtree: true });
+    pasar();
+  }
+
+  /* Nombre legible de lo que registra la bitácora */
+  const ENT_BIT = { historias_clinicas: 'Historia clínica', consultas: 'Consulta', evaluaciones: 'Evaluación', riesgos_trabajo: 'Riesgo de trabajo', incapacidades: 'Incapacidad',
+    vacunas: 'Vacuna', documentos_medicos: 'Documento médico', casos_analisis: 'Caso de seguimiento', resultados_analisis: 'Resultado de análisis', programacion_analisis: 'Programación de análisis',
+    programa_evaluaciones: 'Programa de exámenes', vigilancia_epidemiologica: 'Atención y Control de Salud', expedientes_medicos_estado: 'Estado del expediente' };
+  const FIJAS_BIT = { 'expediente.consultar': 'Consulta del expediente', 'documento.consultar': 'Apertura de documento', 'expediente.imprimir': 'Impresión del expediente' };
+  function etiquetaAccion(a) {
+    a = String(a || ''); if (FIJAS_BIT[a]) return FIJAS_BIT[a];
+    const p = a.split('.'); return ENT_BIT[p[0]] && p[1] ? ENT_BIT[p[0]] + ' ' + p[1] : a;
   }
 
   /* Botón «Volver arriba»: aparece al bajar y sube el área de contenido (es la que se desplaza). */
@@ -453,7 +534,7 @@
           '<button class="theme-btn" id="zx-tema" aria-label="Cambiar tema"></button>' +
           '<div class="tb-user"><b>' + esc(s.nombre) + '</b><span title="' + esc([s.puesto, s.departamento].filter(Boolean).join(' · ')) + '">' +
             esc([s.puesto, s.departamento].filter(Boolean).join(' · ')) + '</span></div>' +
-          '<div class="tb-avatar">' + esc(iniciales(s.nombre)) + '</div>' +
+          '<a class="tb-avatar" href="cuenta.html" title="Mi cuenta" aria-label="Mi cuenta">' + esc(iniciales(s.nombre)) + '</a>' +
           '<button class="btn-logout" id="zx-salir">Salir</button>' +
         '</div>' +
       '</header>' +
@@ -471,6 +552,8 @@
     document.body.appendChild(app);
     $('#zx-tema').addEventListener('click', alternarTema);
     montarVolverArriba();
+    iniciarInactividad();
+    activarBuscadores();
     document.querySelectorAll('[data-form]').forEach(b => b.addEventListener('click', () => {      // formularios de la barra superior
       const menu = b.closest('details'); if (menu) menu.removeAttribute('open');
       const abrir = global.ZX && global.ZX.formularios && global.ZX.formularios[b.dataset.form];
@@ -627,6 +710,6 @@
     esc, $, $$, MESES, DIAS,
     hoyISO, parse, fmt, fmtDT, fmtLargo, MES3, iso, sumaDias, diffDias, antiguedad, edad, iniciales, imc, alHash,
     alternarTema, toast, modal, cerrarModal, confirmar, calendario,
-    chip, requiereSesion, sesionEfectiva, GRUPOS, montarShell, bindVistas, pie, cargando, fallo, arranque, tabla, descargarCSV, leerCSV
+    chip, requiereSesion, sesionEfectiva, GRUPOS, coincide, etiquetaAccion, montarShell, bindVistas, pie, cargando, fallo, arranque, tabla, descargarCSV, leerCSV
   };
 })(window);

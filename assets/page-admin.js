@@ -53,7 +53,7 @@
   function usuarios() {
     const lista = D.emps.filter(e =>
       (!fNivel || e.nivel === fNivel) && (!fPerfil || e.perfil === fPerfil) &&
-      (!q || (e.nombre + ' ' + e.id + ' ' + e.correo).toLowerCase().indexOf(q.toLowerCase()) >= 0));
+      (!q || ZX.coincide(e.nombre + ' ' + e.id + ' ' + e.correo, q)));
 
     main.innerHTML =
       cab('Usuarios y acceso', D.emps.length + ' usuarios registrados', '<button class="btn gh" id="csv">⬇ CSV</button>') +
@@ -178,7 +178,7 @@
     }
     return out;
   }
-  const coincide = (e, q) => !q || (e.nombre + ' ' + e.id + ' ' + (e.puesto || '') + ' ' + (e.direccion || '') + ' ' + (e.departamento || '')).toLowerCase().indexOf(q.toLowerCase()) >= 0;
+  const coincide = (e, q) => !q || ZX.coincide(e.nombre + ' ' + e.id + ' ' + (e.puesto || '') + ' ' + (e.direccion || '') + ' ' + (e.departamento || ''), q);
 
   function equipos() {
     const activos = D.emps.filter(e => e.estatus !== 'baja');
@@ -497,7 +497,7 @@
     const lista = D.log.filter(l => (!fAccion || l.accion === fAccion) && (!fUsuario || l.usuario === fUsuario));
     const cols = [
       { t: 'Fecha y hora', k: 'fecha' }, { t: 'Usuario', v: l => nombreDe(l.usuario) },
-      { t: 'Acción', k: 'accion' }, { t: 'Registro', k: 'entidad' },
+      { t: 'Acción', v: l => ZX.etiquetaAccion(l.accion) }, { t: 'Registro', k: 'entidad' },
       { t: 'Colaborador afectado', v: l => l.afectado ? nombreDe(l.afectado) : '—' }, { t: 'Detalle', k: 'detalle' }
     ];
     const accesosClinicos = D.log.filter(l => l.accion === 'expediente.consultar').length;
