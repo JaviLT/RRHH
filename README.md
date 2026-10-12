@@ -4,7 +4,7 @@ Aplicación web interna de Zubex Industrial: expediente médico ocupacional, **E
 Médico Electrónico ZX** (análisis clínicos bajo lineamiento SQF), citas, vacaciones y banco de horas,
 y gestión documental de RRHH, con permisos distintos por nivel y por perfil.
 
-**Versión 2.5.0 · Equipo RMNC · Octubre 2026**
+**Versión 2.6.0 · Equipo RMNC · Octubre 2026**
 
 > **Trabaja únicamente con Supabase.** Ya no existe el modo demo ni ningún dato de ejemplo en el
 > código: todo lo que se ve viene de la base de datos real (proyecto `RRHH`). Las pruebas se hacen
@@ -12,6 +12,13 @@ y gestión documental de RRHH, con permisos distintos por nivel y por perfil.
 
 ## Qué hay de nuevo
 
+- **2.6.0** — **Módulos desactivados por ahora** (interruptor `activo: false` en `MODULOS` de `app.js`): *Vacaciones y horas*, *Calendario*, *Recursos Humanos* e
+  *Indicadores*. No salen en el menú ni en «Tus secciones» y abrir su dirección muestra «Módulo no habilitado». No se tocó ningún dato ni regla de la base; se reactivan
+  quitando `activo: false`. La barra superior sólo muestra los accesos de módulos activos (hoy, *Cita médica*) y las tarjetas de saldo del Inicio ya no salen.
+  **Grupo «Expediente Clínico y Salud Ocupacional»** (`GRUPOS` en `app.js`): Servicio médico, Doctor, Análisis clínicos y Aptitud y restricciones cuelgan de un solo módulo
+  en el menú; cada uno conserva su página y permiso. Con un solo sub-módulo se muestra directo. **Se retiró «Ver como».** **Celular:** botón ☰ en la barra superior que abre
+  el menú como cajón, barra superior compacta y contenido ajustado al ancho de la pantalla (sin texto cortado). **Corrección:** al guardar un perfil se descartaba el módulo
+  *Doctor* (faltaba en la lista de módulos asignables de `api.js`); ahora se conserva y los módulos desactivados salen bloqueados y conservados en *Perfiles y módulos*.
 - **2.5.0** — **Módulo «Doctor»** (`doctor.html`, sólo perfil Salud Ocupacional) con *Pacientes* y *Agenda del médico*; *Servicio médico* queda para los
   empleados (y, mientras se mueven, las demás vistas del médico). Es el mismo código de `page-medico.js` en «modo doctor» (`assets/doctor-modo.js`).
   **Pacientes** sin la columna *Puesto*. **Expediente:** se abre en *Ficha del colaborador* (sin *Resumen*), pestañas sin números, *Atenciones* →

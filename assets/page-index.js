@@ -92,11 +92,19 @@
       tarjetas += kpi('Próxima cita', proxCita ? ZX.fmt(proxCita.fecha) : '—',
         proxCita ? proxCita.hora + ' h · Servicio médico' : 'Sin citas agendadas');
 
-      const mods = ZX.modulosVisibles().filter(m => m.id !== 'inicio' && ZX.puede(sesion, m.id)).map(m =>
-        '<a class="mod" href="' + esc(m.url) + '">' +
-          '<div class="mod-ico">' + m.ico + '</div><b>' + esc(m.nombre) + '</b>' +
-          '<p>' + esc(m.desc || '') + '</p>' +
-          '<span class="mod-tag">Entrar →</span></a>').join('');
+      const visibles = ZX.modulosVisibles().filter(m => m.id !== 'inicio' && ZX.puede(sesion, m.id)), hechos = {};
+      const tarjetaMod = m => '<a class="mod" href="' + esc(m.url) + '">' +
+        '<div class="mod-ico">' + m.ico + '</div><b>' + esc(m.nombre) + '</b><p>' + esc(m.desc || '') + '</p><span class="mod-tag">Entrar →</span></a>';
+      const mods = visibles.map(m => {
+        if (!m.grupo) return tarjetaMod(m);
+        if (hechos[m.grupo]) return '';
+        hechos[m.grupo] = true;
+        const miembros = visibles.filter(x => x.grupo === m.grupo);
+        if (miembros.length === 1) return tarjetaMod(miembros[0]);
+        const g = ZX.GRUPOS[m.grupo];
+        return '<div class="mod mod-grupo"><div class="mod-ico">' + g.ico + '</div><b>' + esc(g.nombre) + '</b><p>' + esc(g.desc) + '</p>' +
+          '<div class="mod-sub">' + miembros.map(x => '<a href="' + esc(x.url) + '">' + x.ico + ' ' + esc(x.nombre) + '</a>').join('') + '</div></div>';
+      }).join('');
 
       const linea = [ficha.departamento, ficha.correo].filter(Boolean).join(' · ');
       main.innerHTML =

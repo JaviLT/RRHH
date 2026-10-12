@@ -153,7 +153,6 @@
   function cerrarSesion() {
     try {
       sessionStorage.removeItem(config.sesionKey);
-      sessionStorage.removeItem('zx_vista_como');          // la vista previa de Administración termina con la sesión
       sessionStorage.removeItem(config.perfilesCacheKey);
       sessionStorage.removeItem(config.avisoCacheKey);
     } catch (e) {}
@@ -189,7 +188,6 @@
       puesto: emp.puesto, nivel: emp.nivel, perfil: emp.perfil, inicio: new Date().toISOString()
     };
     sessionStorage.setItem(config.sesionKey, JSON.stringify(sesion));
-    sessionStorage.removeItem('zx_vista_como');
     await refrescarCaches();
     return sesion;
   }
@@ -609,7 +607,7 @@
   /* ============================================================
      Administración de acceso — nivel (fijo) y perfil (editable).
      ============================================================ */
-  const MODULOS_ASIGNABLES = ['analisis', 'aptitud', 'indicadores', 'rrhh', 'admin'];
+  const MODULOS_ASIGNABLES = ['doctor', 'analisis', 'aptitud', 'indicadores', 'rrhh', 'admin'];    // 'doctor' faltaba: al guardar un perfil se descartaba
 
   const admin = {
     perfiles: () => sb(cliente().from('perfiles').select('*')).then(listaDesdeDB),

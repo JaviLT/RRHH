@@ -383,16 +383,6 @@ a.kpi-link .kpi-d::after{content:" →";opacity:.6}
 .modal .cal-d{aspect-ratio:auto;height:38px}
 
 
-/* ---- Vista previa por tipo de usuario (Administración) ---- */
-.tb-ver{display:flex;align-items:center;gap:6px;color:#fff;font-size:11.5px;font-weight:600;white-space:nowrap}
-.tb-ver select{min-width:150px;background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.35);border-radius:8px;
-  padding:6px 8px;font-size:12px;font-weight:600;max-width:190px;cursor:pointer}
-.tb-ver select option,.tb-ver select optgroup{color:#111;background:#fff}
-@media(max-width:1180px){.tb-ver span{display:none}}
-.vista-banner{display:flex;align-items:center;gap:12px;background:#fff4d6;color:#5b3d00;border-bottom:1px solid #f0d58a;
-  padding:8px 18px;font-size:12.5px;line-height:1.4;flex-shrink:0}
-.vista-banner>div{flex:1}
-[data-theme=dark] .vista-banner{background:#3a2e0e;color:#ffe3a1;border-bottom-color:#6b5517}
 
 /* Barra superior: el logo no se parte y el nombre largo se recorta con puntos suspensivos */
 .zx-logo{flex-shrink:0;white-space:nowrap}
@@ -421,3 +411,58 @@ a.kpi-link .kpi-d::after{content:" →";opacity:.6}
 @media print{.zx-top{display:none}}
 /* Nombres largos en el menú lateral (por ejemplo «Atención y Control de Salud») pasan a dos líneas */
 .sb-subitem{white-space:normal;line-height:1.25}
+
+/* ---- Grupo «Expediente Clínico y Salud Ocupacional» en el menú ---- */
+.sb-grupo-t{width:100%;text-align:left;background:transparent;border:none;cursor:pointer;font-family:inherit}
+.sb-caret{margin-left:auto;font-size:11px;transition:transform .2s;color:var(--tx3)}
+.sb-grupo.abierto>.sb-grupo-t .sb-caret{transform:rotate(180deg)}
+.sb-grupo-c{display:none;flex-direction:column;gap:2px;margin:2px 0 6px 12px;padding-left:8px;border-left:2px solid var(--zx-soft)}
+.sb-grupo.abierto>.sb-grupo-c{display:flex}
+.sb-grupo.abierto>.sb-grupo-t{color:var(--zx);font-weight:600}
+.sidebar.col .sb-grupo-c{margin-left:0;padding-left:0;border-left:none}
+.sidebar.col .sb-caret{display:none}
+.mod-grupo{cursor:default}
+.mod-sub{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.mod-sub a{background:var(--zx-soft);color:var(--zx);border-radius:20px;padding:4px 11px;font-size:12px;font-weight:600;text-decoration:none}
+.mod-sub a:hover{background:var(--zx);color:#fff}
+.chk-grupo{font-size:11px;text-transform:uppercase;letter-spacing:.6px;font-weight:700;color:var(--tx3);margin:10px 0 2px}
+.chk-sub{margin-left:14px}
+
+/* ---- Botón de menú (celular), barra superior y contenido que se ajustan al ancho de la pantalla ---- */
+.tb-menu-btn{display:none;width:38px;height:36px;border-radius:8px;border:1px solid rgba(255,255,255,.34);background:rgba(255,255,255,.12);color:#fff;
+  font-size:18px;line-height:1;cursor:pointer;align-items:center;justify-content:center;flex:none;font-family:inherit}
+.tb-nav.tb-solo{display:flex!important}
+.sb-fondo{display:none}
+.layout,.main{min-width:0}
+.main{overflow-x:hidden}
+.page-t,.page-sub,.home-id,.kpi-d,.mod p{overflow-wrap:anywhere}
+.card,.kpi,.mod{min-width:0;max-width:100%}
+.tbl-wrap{max-width:100%;overflow-x:auto}
+.page-head{flex-wrap:wrap}
+.btn-row{flex-wrap:wrap}
+@media(max-width:900px){
+  .tb-menu-btn{display:inline-flex}
+  .sb-top{display:none}
+  .sidebar,.sidebar.col{position:fixed;left:0;top:56px;bottom:0;width:272px;max-width:86vw;z-index:45;transform:translateX(-104%);
+    transition:transform .22s ease;border-right:1px solid var(--bd);box-shadow:none}
+  .sidebar.abierto{transform:none;box-shadow:var(--sh2)}
+  .sidebar.col .sb-item span:not(.sb-ico){display:inline}
+  .sidebar.col .sb-sec{visibility:visible;height:auto;padding:12px 10px 4px}
+  .sidebar.col .sb-foot,.sidebar.col .sb-badge{display:block}
+  .sidebar.col .sb-caret{display:inline}
+  .sb-fondo.abierto{display:block;position:fixed;left:0;right:0;top:56px;bottom:0;background:rgba(0,0,0,.45);z-index:44}
+  .topbar{gap:8px;padding:0 10px}
+  .tb-right{gap:8px}
+  .tb-op{padding:6px 10px;font-size:12px}
+  .main{padding:14px}
+}
+@media(max-width:520px){
+  .zx-logo>span:last-child{display:none}
+  .btn-logout{padding:6px 9px;font-size:12px}
+  .tb-more summary{padding:6px 9px}
+}
+
+/* El título largo del grupo del menú baja a dos líneas y su flecha siempre se ve */
+.sb-grupo-t{white-space:normal;line-height:1.25;align-items:center}
+.sb-grupo-t>span:nth-child(2){flex:1;min-width:0;overflow-wrap:anywhere}
+.sb-caret{flex:none}

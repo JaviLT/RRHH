@@ -6,7 +6,7 @@
   'use strict';
 
   const API = global.ZX_API;
-  const VERSION = '2.5.0';
+  const VERSION = '2.6.0';
 
   /* ---------------- Tipografía de marca ----------------
      El manual de marca pide Poppins con fallback a Segoe UI. Cargarla con un
@@ -37,34 +37,34 @@
     /* Reactivado. Llevaba meses desactivado (activo: false); si algo se ve
        raro aquí, es lo primero a revisar — no se volvió a probar hasta ahora.
        Universal: todos tienen esto, sin importar nivel ni perfil. */
-    { id: 'vacaciones', nombre: 'Vacaciones y horas', ico: '🌴', url: 'vacaciones.html', roles: '*',
+    { id: 'vacaciones', activo: false, nombre: 'Vacaciones y horas', ico: '🌴', url: 'vacaciones.html', roles: '*',
       desc: 'Solicita vacaciones y banco de horas, consulta tu saldo y tus solicitudes.' },
 
     /* El calendario no es una sección del menú: se abre desde la barra superior.
        `oculto` lo deja fuera del menú lateral, de "Tus secciones" y de la matriz de permisos. */
-    { id: 'calendario', nombre: 'Calendario',        ico: '📆', url: 'calendario.html', roles: '*', oculto: true },
+    { id: 'calendario', activo: false, nombre: 'Calendario',        ico: '📆', url: 'calendario.html', roles: '*', oculto: true },
 
-    { id: 'medico',     nombre: 'Servicio médico',   ico: '🩺', url: 'medico.html',     roles: '*',
+    { id: 'medico', grupo: 'clinico',     nombre: 'Servicio médico',   ico: '🩺', url: 'medico.html',     roles: '*',
       desc: 'Tu historia clínica, tu expediente ocupacional y tus citas con el médico de empresa.' },
     /* Doctor: el espacio de trabajo del médico (pacientes, agenda y consultas). Sin roles fijos: lo da
        el perfil que lo traiga entre sus módulos (Salud Ocupacional). Servicio médico queda para los empleados. */
-    { id: 'doctor',     nombre: 'Doctor',            ico: '👨‍⚕️', url: 'doctor.html',
+    { id: 'doctor', grupo: 'clinico',     nombre: 'Doctor',            ico: '👨‍⚕️', url: 'doctor.html',
       desc: 'Tus pacientes, la agenda del médico y el registro de consultas.' },
     /* Perfil-gated: sólo quien tenga un perfil con 'analisis' entre sus
        módulos (tabla perfiles de la base de datos). Sin roles fijos aquí — se
        resuelve en vivo contra el store, por eso Administración puede
        crear perfiles nuevos y dárselo sin tocar este archivo. */
-    { id: 'analisis',   nombre: 'Análisis clínicos', ico: '🧪', url: 'analisis.html',
+    { id: 'analisis', grupo: 'clinico',   nombre: 'Análisis clínicos', ico: '🧪', url: 'analisis.html',
       desc: 'Etapa 1 · SQF: resultados de los análisis anuales, desviaciones y seguimiento médico hasta el alta.' },
     /* Aptitud es el único módulo con DOS caminos de acceso: por perfil
        (medico/vigilancia → planta completa) o por nivel (nivelExtra:
        'jefe' → sólo el equipo propio). Ver puede() y soloEquipo en
        page-aptitud.js. */
-    { id: 'aptitud',    nombre: 'Aptitud y restricciones', ico: '🦺', url: 'aptitud.html', nivelExtra: 'jefe',
+    { id: 'aptitud', grupo: 'clinico',    nombre: 'Aptitud y restricciones', ico: '🦺', url: 'aptitud.html', nivelExtra: 'jefe',
       desc: 'Aptitud laboral, restricciones y recomendaciones por puesto. Sin información clínica.' },
-    { id: 'indicadores', nombre: 'Indicadores',      ico: '📈', url: 'indicadores.html',
+    { id: 'indicadores', activo: false, nombre: 'Indicadores',      ico: '📈', url: 'indicadores.html',
       desc: 'Tablero de salud ocupacional con datos agregados, sin datos clínicos individuales.' },
-    { id: 'rrhh',       nombre: 'Recursos Humanos',  ico: '🗂️', url: 'rrhh.html',
+    { id: 'rrhh', activo: false,       nombre: 'Recursos Humanos',  ico: '🗂️', url: 'rrhh.html',
       desc: 'Movimientos RHF-34, maestro de colaboradores y expediente documental.' },
     { id: 'admin',      nombre: 'Administración',    ico: '⚙️', url: 'admin.html',
       desc: 'Usuarios, perfiles y permisos de acceso, y bitácora de auditoría del sistema.' },
@@ -77,6 +77,13 @@
     { id: 'privacidad', nombre: 'Aviso de privacidad', ico: '🔒', url: 'privacidad.html', roles: '*',
       desc: 'Consulta el aviso de privacidad, otorga o revoca tu consentimiento y ejerce tus derechos ARCO.' }
   ];
+
+  /* Módulos agrupados en el menú: el grupo aparece si la persona tiene al menos uno de sus sub-módulos
+     (con uno solo, ese sub-módulo se muestra directo). Cada sub-módulo conserva su página y su permiso. */
+  const GRUPOS = {
+    clinico: { nombre: 'Expediente Clínico y Salud Ocupacional', ico: '🩺',
+               desc: 'Historia clínica, expediente, citas, análisis clínicos y aptitud de salud ocupacional.' }
+  };
 
   const moduloActivo = (m) => m && m.activo !== false;
 
@@ -112,51 +119,8 @@
   const esVigilancia = (persona) => (persona || {}).perfil === 'vigilancia';
   const esAdmin = (persona) => (persona || {}).perfil === 'admin';
 
-  /* ---------------- Vista previa por tipo de usuario (sólo Administración) ----------------
-     Una persona con perfil Administrador puede "ver el portal como" otro nivel (Empleado, Jefe) o perfil (Salud Ocupacional, RRHH...) para comprobar qué menús, secciones y opciones
-     le aparecen a cada tipo, sin entrar y salir de cuentas.
-     ALCANCE: cambia únicamente lo que la pantalla MUESTRA (menús, módulos, pestañas, botones). La
-     identidad real no cambia: las peticiones a la base siguen yendo con la sesión y los permisos reales
-     del administrador, así que los datos que llegan NO son los de ese tipo de usuario. Tampoco se entra
-     a ninguna cuenta ajena: hacerlo daría acceso a datos de otras personas (en el caso del médico, a
-     datos clínicos). Sólo se aplica si la sesión real es de Administrador. */
-  const VISTA_KEY = 'zx_vista_como';
-  function leerVista() { try { return JSON.parse(sessionStorage.getItem(VISTA_KEY) || 'null'); } catch (e) { return null; } }
-  function setVista(clave) {
-    if (!clave || clave === 'real') { sessionStorage.removeItem(VISTA_KEY); return; }
-    const tipo = clave.slice(0, 1), id = clave.slice(2);
-    const nivel = tipo === 'n' ? id : 'empleado', perfil = tipo === 'p' ? id : 'ninguno';
-    const etiqueta = tipo === 'n' ? NIVEL_NOMBRE(id) : PERFIL_NOMBRE(id);
-    sessionStorage.setItem(VISTA_KEY, JSON.stringify({ clave, nivel, perfil, etiqueta }));
-  }
-  /* La sesión que usa la interfaz para decidir qué mostrar: la real, o la de la vista previa. */
-  function sesionEfectiva() {
-    const s = API.sesionActual();
-    if (!s) return s;
-    const v = leerVista();
-    if (!v) return s;
-    if (!esAdmin(s)) { sessionStorage.removeItem(VISTA_KEY); return s; }
-    return Object.assign({}, s, { nivel: v.nivel, perfil: v.perfil, vistaComo: v.etiqueta });
-  }
-  function selectorVista(real) {
-    if (!esAdmin(real)) return '';
-    const v = leerVista(), actual = v ? v.clave : 'real';
-    const niveles = Object.keys((global.ZX_CAT && ZX_CAT.NIVELES) || {}).map(n => ['n:' + n, NIVEL_NOMBRE(n)]);
-    const perfiles = (API.perfilesSync ? API.perfilesSync() : []).filter(p => p.id !== 'ninguno' && p.id !== 'admin').map(p => ['p:' + p.id, p.nombre]);
-    const op = (par) => '<option value="' + esc(par[0]) + '"' + (par[0] === actual ? ' selected' : '') + '>' + esc(par[1]) + '</option>';
-    return '<label class="tb-ver" title="Ver el portal como otro tipo de usuario (sólo cambia lo que se muestra)"><span>👁 Ver como</span>' +
-      '<select id="zx-vista" aria-label="Ver como">' +
-        '<option value="real"' + (actual === 'real' ? ' selected' : '') + '>Administrador (mi vista)</option>' +
-        '<optgroup label="Por nivel">' + niveles.map(op).join('') + '</optgroup>' +
-        '<optgroup label="Por perfil">' + perfiles.map(op).join('') + '</optgroup>' +
-      '</select></label>';
-  }
-  function bannerVista(s, real) {
-    return '<div class="vista-banner" role="status">👁 <div><b>Vista previa como «' + esc(s.vistaComo) + '».</b> ' +
-      'Ves los menús, secciones y botones que le aparecen a ese tipo de usuario. Los <b>datos</b> que se cargan siguen siendo los de tu cuenta (' +
-      esc(real.id) + ') y tus permisos reales, así que sirve para validar qué opciones ve, no qué información le devuelve la base.</div>' +
-      '<button class="btn sm" id="zx-vista-fin">Volver a mi vista</button></div>';
-  }
+  /* La sesión que usa la interfaz. (Antes admitía una «vista previa por tipo de usuario»; se retiró.) */
+  function sesionEfectiva() { return API.sesionActual(); }
 
   /* Nota de conservación documental — se muestra donde hay documentos o bajas.
      Las dos normas conviven con plazos distintos; la política definitiva la
@@ -405,10 +369,7 @@
           (desactivado
             ? 'El módulo <b>' + esc(mod.nombre || moduloId) + '</b> está desactivado en esta versión del portal.'
             : 'Tu acceso (' + esc(ACCESO_TEXTO(s)) + ') no tiene permiso para <b>' + esc(mod.nombre || moduloId) + '</b>.') +
-        '</p><p style="margin-top:18px"><a href="index.html">Volver al inicio</a>' +
-        (s.vistaComo ? ' · <a href="#" id="zx-fin-vista">Volver a mi vista de Administración</a>' : '') + '</p></div>';
-      const fin = document.getElementById('zx-fin-vista');
-      if (fin) fin.addEventListener('click', ev => { ev.preventDefault(); setVista('real'); location.reload(); });
+        '</p><p style="margin-top:18px"><a href="index.html">Volver al inicio</a></p></div>';
       return null;
     }
     return s;
@@ -418,19 +379,24 @@
      FORMULARIO en el lugar (sin cambiar de página; lo trae formularios.js); Calendario abre su página.
      En pantallas angostas se agrupan en un menú desplegable. */
   const NAV_SUPERIOR = [
-    { id: 'vacaciones', txt: 'Vacaciones',     ico: '🌴', form: 'vacaciones', url: 'vacaciones.html#solicitar-vacaciones' },
-    { id: 'banco',      txt: 'Banco de horas', ico: '⏱️', form: 'banco',      url: 'vacaciones.html#solicitar-banco' },
-    { id: 'cita',       txt: 'Cita médica',    ico: '🩺', form: 'cita',       url: 'medico.html#cita' },
-    { id: 'calendario', txt: 'Calendario',     ico: '📆', url: 'calendario.html' }
+    { id: 'vacaciones', modulo: 'vacaciones', txt: 'Vacaciones',     ico: '🌴', form: 'vacaciones', url: 'vacaciones.html#solicitar-vacaciones' },
+    { id: 'banco',      modulo: 'vacaciones', txt: 'Banco de horas', ico: '⏱️', form: 'banco',      url: 'vacaciones.html#solicitar-banco' },
+    { id: 'cita',       modulo: 'medico',     txt: 'Cita médica',    ico: '🩺', form: 'cita',       url: 'medico.html#cita' },
+    { id: 'calendario', modulo: 'calendario', txt: 'Calendario',     ico: '📆', url: 'calendario.html' }
   ];
-  function navSuperior(activo) {
+  /* Sólo aparecen los accesos cuyo módulo está activo y permitido. Con uno solo, se muestra como botón suelto
+     (sin el menú desplegable «＋ Solicitar»). */
+  function navSuperior(activo, persona) {
+    const items = NAV_SUPERIOR.filter(n => puede(persona, n.modulo));
+    if (!items.length) return '';
     const interior = n => '<span class="tb-ico">' + n.ico + '</span><span>' + esc(n.txt) + '</span>';
     const liga = (n, clase) => n.form
       ? '<button type="button" class="' + clase + '" data-form="' + n.form + '">' + interior(n) + '</button>'
       : '<a class="' + clase + (n.id === activo ? ' on' : '') + '" href="' + esc(n.url) + '">' + interior(n) + '</a>';
-    return '<nav class="tb-nav" aria-label="Accesos rápidos">' + NAV_SUPERIOR.map(n => liga(n, 'tb-op')).join('') + '</nav>' +
-      '<details class="tb-more"><summary aria-label="Accesos rápidos">☰ Solicitar</summary>' +
-        '<div class="tb-menu">' + NAV_SUPERIOR.map(n => liga(n, 'tb-op')).join('') + '</div></details>';
+    const botones = items.map(n => liga(n, 'tb-op')).join('');
+    if (items.length === 1) return '<nav class="tb-nav tb-solo" aria-label="Accesos rápidos">' + botones + '</nav>';
+    return '<nav class="tb-nav" aria-label="Accesos rápidos">' + botones + '</nav>' +
+      '<details class="tb-more"><summary aria-label="Accesos rápidos">＋ Solicitar</summary><div class="tb-menu">' + botones + '</div></details>';
   }
 
   /* Botón «Volver arriba»: aparece al bajar y sube el área de contenido (es la que se desplaza). */
@@ -450,33 +416,40 @@
   function montarShell(activo, subtitulo, navItems) {
     const s = sesionEfectiva();
     if (!s) return null;
-    const real = API.sesionActual();
     const app = document.createElement('div');
     app.className = 'app';
 
     /* Barra lateral tipo acordeón: las vistas del módulo actual ("Mi saldo",
        "Mis solicitudes"...) se despliegan JUSTO DEBAJO de ese módulo, no en
        un bloque aparte al final. Los demás módulos quedan como enlaces. */
+    const vistasHtml = (m) => {
+      if (m.id !== activo || !navItems || !navItems.length) return '';
+      return '<div class="sb-sub">' + navItems.map((n, i) =>
+        '<button class="sb-item sb-subitem' + (i === 0 ? ' on' : '') + '" data-vista="' + esc(n.id) + '">' +
+        '<span class="sb-ico">' + n.ico + '</span><span>' + esc(n.nombre) + '</span></button>').join('') + '</div>';
+    };
+    const modHtml = (m) => '<a class="sb-item' + (m.id === activo ? ' on' : '') + '" href="' + esc(m.url) + '"><span class="sb-ico">' + m.ico +
+      '</span><span>' + esc(m.nombre) + '</span></a>' + vistasHtml(m);
     let nav = '';
-    modulosVisibles().filter(m => puede(s, m.id)).forEach(m => {
-      const on = m.id === activo ? ' on' : '';
-      nav += '<a class="sb-item' + on + '" href="' + esc(m.url) + '"><span class="sb-ico">' + m.ico + '</span><span>' + esc(m.nombre) + '</span></a>';
-      if (m.id === activo && navItems && navItems.length) {
-        nav += '<div class="sb-sub">';
-        navItems.forEach((n, i) => {
-          nav += '<button class="sb-item sb-subitem' + (i === 0 ? ' on' : '') + '" data-vista="' + esc(n.id) + '">' +
-                 '<span class="sb-ico">' + n.ico + '</span><span>' + esc(n.nombre) + '</span></button>';
-        });
-        nav += '</div>';
-      }
+    const permitidos = modulosVisibles().filter(m => puede(s, m.id)), hechos = {};
+    permitidos.forEach(m => {
+      if (!m.grupo) { nav += modHtml(m); return; }
+      if (hechos[m.grupo]) return;
+      hechos[m.grupo] = true;
+      const miembros = permitidos.filter(x => x.grupo === m.grupo);
+      if (miembros.length === 1) { nav += modHtml(miembros[0]); return; }          // un solo sub-módulo: se muestra directo
+      const g = GRUPOS[m.grupo], abierto = miembros.some(x => x.id === activo);
+      nav += '<div class="sb-grupo' + (abierto ? ' abierto' : '') + '"><button type="button" class="sb-item sb-grupo-t" aria-expanded="' + abierto + '">' +
+        '<span class="sb-ico">' + g.ico + '</span><span>' + esc(g.nombre) + '</span><span class="sb-caret">▾</span></button>' +
+        '<div class="sb-grupo-c">' + miembros.map(modHtml).join('') + '</div></div>';
     });
 
     app.innerHTML =
       '<header class="topbar">' +
+        '<button type="button" class="tb-menu-btn" id="zx-menu" aria-label="Abrir menú">☰</button>' +
         '<div class="zx-logo"><span class="zx-mark">ZX</span><span>Portal RRHH</span></div>' +
-        navSuperior(activo) +
+        navSuperior(activo, s) +
         '<div class="tb-right">' +
-          selectorVista(real) +
           '<button class="theme-btn" id="zx-tema" aria-label="Cambiar tema"></button>' +
           '<div class="tb-user"><b>' + esc(s.nombre) + '</b><span title="' + esc([s.puesto, s.departamento].filter(Boolean).join(' · ')) + '">' +
             esc([s.puesto, s.departamento].filter(Boolean).join(' · ')) + '</span></div>' +
@@ -484,8 +457,8 @@
           '<button class="btn-logout" id="zx-salir">Salir</button>' +
         '</div>' +
       '</header>' +
-      (s.vistaComo ? bannerVista(s, real) : '') +
       '<div class="layout">' +
+        '<div class="sb-fondo" id="zx-sbf"></div>' +
         '<aside class="sidebar" id="zx-sb">' +
           '<div class="sb-top"><button class="sb-toggle" id="zx-tg" aria-label="Colapsar menú">☰</button></div>' +
           '<nav class="sb-nav"><div class="sb-sec">Portal</div>' + nav + '</nav>' +
@@ -503,8 +476,14 @@
       const abrir = global.ZX && global.ZX.formularios && global.ZX.formularios[b.dataset.form];
       if (abrir) abrir(); else location.href = (NAV_SUPERIOR.find(n => n.form === b.dataset.form) || {}).url;
     }));
-    const sv = $('#zx-vista'); if (sv) sv.addEventListener('change', () => { setVista(sv.value); location.reload(); });
-    const fv = $('#zx-vista-fin'); if (fv) fv.addEventListener('click', () => { setVista('real'); location.reload(); });
+    /* Menú en el celular: cajón que se abre con ☰ y se cierra al elegir algo o al tocar fuera */
+    const cajon = (abrir) => { $('#zx-sb').classList.toggle('abierto', abrir); $('#zx-sbf').classList.toggle('abierto', abrir); };
+    $('#zx-menu').addEventListener('click', () => cajon(!$('#zx-sb').classList.contains('abierto')));
+    $('#zx-sbf').addEventListener('click', () => cajon(false));
+    document.querySelectorAll('#zx-sb .sb-item[data-vista], #zx-sb a.sb-item').forEach(x => x.addEventListener('click', () => cajon(false)));
+    document.querySelectorAll('.sb-grupo-t').forEach(b => b.addEventListener('click', () => {
+      const g = b.parentElement; g.classList.toggle('abierto'); b.setAttribute('aria-expanded', g.classList.contains('abierto'));
+    }));
     $('#zx-salir').addEventListener('click', () => { API.cerrarSesion(); location.replace('index.html'); });
     $('#zx-tg').addEventListener('click', () => $('#zx-sb').classList.toggle('col'));
     return { main: $('#zx-main'), sesion: s };
@@ -648,6 +627,6 @@
     esc, $, $$, MESES, DIAS,
     hoyISO, parse, fmt, fmtDT, fmtLargo, MES3, iso, sumaDias, diffDias, antiguedad, edad, iniciales, imc, alHash,
     alternarTema, toast, modal, cerrarModal, confirmar, calendario,
-    chip, requiereSesion, sesionEfectiva, montarShell, bindVistas, pie, cargando, fallo, arranque, tabla, descargarCSV, leerCSV
+    chip, requiereSesion, sesionEfectiva, GRUPOS, montarShell, bindVistas, pie, cargando, fallo, arranque, tabla, descargarCSV, leerCSV
   };
 })(window);

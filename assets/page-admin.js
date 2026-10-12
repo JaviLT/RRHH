@@ -19,7 +19,7 @@
   /* Módulos que un perfil puede llevar. Los universales (vacaciones,
      medico, citas, privacidad) no aparecen: los tiene todo el mundo,
      asignarlos a un perfil no tendría efecto. */
-  const MODULOS_ASIGNABLES = ['analisis', 'aptitud', 'indicadores', 'rrhh', 'admin'];
+  const MODULOS_ASIGNABLES = ['doctor', 'analisis', 'aptitud', 'indicadores', 'rrhh', 'admin'];    // Doctor ya se puede dar desde aquí
 
   const sesion = ZX.requiereSesion('admin');
   if (!sesion) return;
@@ -131,7 +131,7 @@
       const nivel = $('#nv', body).value, perfilId = $('#pf', body).value;
       const p = perfilDe(perfilId);
       const universales = ZX.MODULOS.filter(m => m.roles === '*').map(m => m.nombre);
-      const extra = p.modulos.map(nombreModulo);
+      const extra = p.modulos.filter(id => ((ZX.MODULOS.find(m => m.id === id) || {}).activo !== false)).map(nombreModulo);
       if (nivel === 'jefe') extra.push('Aptitud y restricciones (de su equipo)');
       $('#prev', body).innerHTML = '<b>Con este acceso verá:</b> ' + esc(universales.concat(extra).join(' · ')) +
         (perfilId === 'medico' ? '<br><b style="color:var(--dnt)">Incluye acceso a datos clínicos individuales.</b>' : '') +
@@ -403,11 +403,18 @@
       cuerpo:
         '<div class="field"><label for="nom">Nombre del perfil</label><input id="nom" maxlength="60" value="' + esc(p ? p.nombre : '') + '"></div>' +
         '<div class="field"><label>Módulos que otorga</label>' +
-          MODULOS_ASIGNABLES.map(mid => {
-            const chk = p && p.modulos.indexOf(mid) >= 0;
-            return '<label class="chk"><input type="checkbox" value="' + esc(mid) + '"' + (chk ? ' checked' : '') + '>' +
-              '<span>' + esc(nombreModulo(mid)) + '</span></label>';
-          }).join('') +
+          (() => {
+            let ult = null;
+            return MODULOS_ASIGNABLES.map(mid => {
+              const m = ZX.MODULOS.find(x => x.id === mid) || {}, chk = p && p.modulos.indexOf(mid) >= 0, apagado = m.activo === false;
+              let cab = '';
+              if (m.grupo && m.grupo !== ult) { ult = m.grupo; cab = '<div class="chk-grupo">' + esc(ZX.GRUPOS[m.grupo].nombre) + '</div>'; }
+              else if (!m.grupo) ult = null;
+              /* Un módulo desactivado se muestra bloqueado y se conserva tal cual: al reactivarlo no se pierde la asignación */
+              return cab + '<label class="chk' + (m.grupo ? ' chk-sub' : '') + '"><input type="checkbox" value="' + esc(mid) + '"' + (chk ? ' checked' : '') + (apagado ? ' disabled' : '') + '>' +
+                '<span>' + esc(nombreModulo(mid)) + (apagado ? ' <small>(desactivado temporalmente)</small>' : '') + '</span></label>';
+            }).join('');
+          })() +
         '</div>',
       botones: [
         { txt: 'Cancelar', clase: 'gh' },
@@ -462,7 +469,7 @@
     });
 
     main.innerHTML =
-      cab('Matriz de permisos', 'Qué módulo ve cada nivel y cada perfil') +
+      cab('Matriz de permisos', 'Qué módulo ve cada nivel y cada perfil. «Expediente Clínico y Salud Ocupacional» agrupa Servicio médico, Doctor, Análisis clínicos y Aptitud y restricciones.') +
       '<div class="card"><div class="card-t">Universales — todos los tienen</div>' +
         '<p style="font-size:13px">' + universales.map(m => m.ico + ' ' + esc(m.nombre)).join(' · ') + '</p></div>' +
       '<div class="card"><div class="card-t">Por nivel (jerarquía)</div>' +

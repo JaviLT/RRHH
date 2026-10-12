@@ -16,6 +16,7 @@
   const sesion = ZX.requiereSesion(MODO_DOCTOR ? 'doctor' : 'medico');
   if (!sesion) return;
   const soyMedico = ZX.esClinico(sesion);
+  const NOTA_IND = ZX.puede(sesion, 'indicadores') ? ' Los totales de esta sección están ahora en Indicadores → Servicio médico.' : '';
 
   const vistas = MODO_DOCTOR
     ? [{ id: 'pacientes',  nombre: 'Pacientes',            ico: '👥' },
@@ -727,7 +728,7 @@
         { t: '', html: r => '<button class="btn sm" data-abrir="' + esc(r.empleado) + '">Ver expediente</button>' }
       ]), lista, { vacio: 'Sin eventos registrados.' });
 
-    ZX.pie(main, 'Todo accidente de trabajo debe reportarse al IMSS mediante el formato ST-7 dentro de las 24 horas siguientes. El análisis 8D documenta la causa raíz y las acciones correctivas. Los totales de esta sección están ahora en Indicadores → Servicio médico.');
+    ZX.pie(main, 'Todo accidente de trabajo debe reportarse al IMSS mediante el formato ST-7 dentro de las 24 horas siguientes. El análisis 8D documenta la causa raíz y las acciones correctivas.' + NOTA_IND);
     $('#ft').addEventListener('change', e => { fTipoRT = e.target.value; riesgosGlobal(); });
     $('#csv').addEventListener('click', () => descargarCSV('Riesgos_Trabajo_' + hoyISO() + '.csv', cols, lista));
     $$('[data-abrir]').forEach(b => b.addEventListener('click', () => { tabExp = 'rt'; verExpediente(b.dataset.abrir, true); }));
@@ -761,7 +762,7 @@
         { t: '', html: i => '<button class="btn sm" data-abrir="' + esc(i.empleado) + '">Expediente</button>' }
       ]), lista, { vacio: 'Sin incapacidades registradas.' });
 
-    ZX.pie(main, 'Los días se cuentan como días naturales del periodo de la incapacidad, según el certificado expedido por el IMSS. Los totales de esta sección están ahora en Indicadores → Servicio médico.');
+    ZX.pie(main, 'Los días se cuentan como días naturales del periodo de la incapacidad, según el certificado expedido por el IMSS.' + NOTA_IND);
     $('#csv').addEventListener('click', () => descargarCSV('Ausentismo_' + hoyISO() + '.csv', cols, lista));
     $$('[data-abrir]').forEach(b => b.addEventListener('click', () => { tabExp = 'inc'; verExpediente(b.dataset.abrir, true); }));
   }
@@ -789,7 +790,7 @@
         { t: '', html: v => '<button class="btn sm" data-abrir="' + esc(v.id) + '">Expediente</button>' }
       ], filas, { vacio: 'Sin programas de vigilancia asignados.' });
 
-    ZX.pie(main, 'La periodicidad de la vigilancia depende del agente de exposición del puesto (NOM-011 ruido, NOM-010 químicos, NOM-024 vibraciones, entre otras). Los totales de esta sección están ahora en Indicadores → Servicio médico.');
+    ZX.pie(main, 'La periodicidad de la vigilancia depende del agente de exposición del puesto (NOM-011 ruido, NOM-010 químicos, NOM-024 vibraciones, entre otras).' + NOTA_IND);
     $$('[data-abrir]').forEach(b => b.addEventListener('click', () => { tabExp = 'vig'; verExpediente(b.dataset.abrir, true); }));
   }
 
@@ -1236,7 +1237,7 @@
         { t: '', html: p => '<button class="btn sm" data-abrir="' + esc(p.empleado) + '">Expediente</button>' }
       ]), lista, { vacio: 'Sin evaluaciones en el programa.' });
 
-    ZX.pie(main, 'Este programa es el denominador de los indicadores "cumplimiento de evaluaciones médicas" y "cumplimiento de exámenes periódicos" del Entregable 2. Los totales de esta sección están ahora en Indicadores → Servicio médico.');
+    ZX.pie(main, 'Este programa es el denominador de los indicadores "cumplimiento de evaluaciones médicas" y "cumplimiento de exámenes periódicos" del Entregable 2.' + NOTA_IND);
     $('#fe').addEventListener('change', e => { fEstadoP = e.target.value; programaGlobal(); });
     $('#csv').addEventListener('click', () => descargarCSV('Programa_Examenes_' + hoyISO() + '.csv', cols, lista));
     $$('[data-abrir]').forEach(b => b.addEventListener('click', () => { tabExp = 'eval'; verExpediente(b.dataset.abrir, true); }));
@@ -1275,7 +1276,7 @@
         { t: '', html: v => '<button class="btn sm" data-abrir="' + esc(v.empleado) + '">Expediente</button>' }
       ], vencidas, { vacio: 'Ningún esquema vencido.' });
 
-    ZX.pie(main, 'La cobertura considera colaboradores con al menos una aplicación registrada en el portal; no incluye vacunación aplicada fuera de la empresa que no se haya reportado. Los totales de esta sección están ahora en Indicadores → Servicio médico.');
+    ZX.pie(main, 'La cobertura considera colaboradores con al menos una aplicación registrada en el portal; no incluye vacunación aplicada fuera de la empresa que no se haya reportado.' + NOTA_IND);
     $('#nuevaC').addEventListener('click', popupCampana);
     $$('[data-abrir]').forEach(b => b.addEventListener('click', () => { tabExp = 'vac'; verExpediente(b.dataset.abrir, true); }));
   }
