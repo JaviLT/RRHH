@@ -45,7 +45,7 @@
   async function recargar() {
     const [emps, consultas, mio, evaluaciones, riesgos, incapacidades, docs, programa, vacunas, campanas, expedientes, consentimiento, citas, agenda] = await Promise.all([
       API.empleados.lista(), API.medico.consultas(), API.medico.cuestionario(sesion.id),
-      API.medico.evaluaciones(), API.medico.riesgos(), API.medico.incapacidades(), API.medico.documentos(''),
+      API.medico.evaluaciones(), API.medico.riesgos(), API.medico.incapacidades(), [],
       API.medico.programa(), API.medico.vacunas(), API.medico.campanas(), API.medico.expedientes(),
       API.privacidad.consentimiento(sesion.id), API.citas.lista(), API.citas.agenda()
     ]);
@@ -275,7 +275,7 @@
     const evals = D.evaluaciones.filter(x => x.empleado === empId).sort(desc('fecha'));
     const rts = D.riesgos.filter(x => x.empleado === empId).sort(desc('fecha'));
     const inc = D.incapacidades.filter(x => x.empleado === empId).sort(desc('inicio'));
-    const docs = D.docs.filter(x => x.empleado === empId).sort(desc('fecha'));
+    const docs = (await API.medico.documentos(empId)).sort(desc('nombre'));
     const vacs = D.vacunas.filter(x => x.empleado === empId).sort(desc('fecha'));
     const prog = D.programa.filter(x => x.empleado === empId).sort(desc('programada'));
     const exp = D.expedientes.find(x => x.empleado === empId) ||
@@ -333,7 +333,22 @@
       rt: tabRT, inc: tabInc, docs: tabDocs, vig: tabVig, vac: tabVac, log: tabLog, analisis: tabAnalisis
     }[tabExp] || tabFicha)(ctx);
     bindTab(ctx);
+    bindDocs(c);
     ZX.pie(c, notaTab());
+  }
+
+  /* «Ver» abre el PDF en otra pestaña y «Descargar» lo baja. El enlace es temporal (10 min) y sólo lo entrega la base de datos
+     a quien corresponde (el médico o la propia persona). La pestaña se abre ANTES de pedir el enlace para que el navegador no la bloquee. */
+  function bindDocs(c) {
+    $$('[data-ver],[data-bajar]', c).forEach(b => b.addEventListener('click', async () => {
+      const bajar = b.dataset.bajar !== undefined;
+      const w = bajar ? null : window.open('', '_blank');
+      try {
+        const url = await API.medico.urlDocumento(bajar ? b.dataset.bajar : b.dataset.ver, bajar ? ((b.dataset.nom || 'documento').replace(/[^\p{L}\p{N} ._-]/gu, '').trim() || 'documento') + '.pdf' : undefined);
+        if (bajar) { const a = document.createElement('a'); a.href = url; a.download = ''; document.body.appendChild(a); a.click(); a.remove(); }
+        else if (w) w.location.href = url; else window.location.href = url;
+      } catch (e) { if (w) w.close(); toast(e.message, 'no'); }
+    }));
   }
 
   function notaTab() {
@@ -343,7 +358,7 @@
       cons: 'Consultas médicas del expediente: motivo, signos vitales, diagnóstico, tratamiento, evolución y referencias.',
       rt: 'Riesgos de trabajo con análisis de causa raíz en 8 disciplinas (8D) y seguimiento hasta la reincorporación.',
       inc: 'Incapacidades y ausentismo médico. Los días se cuentan como días naturales del periodo.',
-      docs: 'Por ahora sólo se registra el metadato del documento (nombre, tipo y fecha). La carga del archivo aún no está conectada.',
+      docs: 'Los PDF se guardan en un almacenamiento privado: sólo el servicio médico y la propia persona pueden abrirlos, con un enlace temporal. Registrar un documento nuevo desde esta pantalla todavía guarda sólo su nombre; la carga del archivo desde aquí aún no está conectada.',
       vig: 'Programa de vigilancia médica, recomendaciones y restricciones laborales vigentes, y casos en seguimiento.',
       vac: 'Esquema de vacunación y participación en campañas preventivas. La próxima dosis se calcula con el esquema del biológico aplicado.',
       log: 'Trazabilidad de las operaciones sobre este expediente. La escribe el servidor, no el navegador.',
@@ -630,8 +645,12 @@
     return ZX.notaConservacion() +
       (x.esOtro ? '<div class="btn-row" style="margin-bottom:14px"><button class="btn" data-act="nuevoDoc">＋ Registrar documento</button></div>' : '') +
       tabla([
-        { t: 'Tipo', k: 'tipo' }, { t: 'Archivo', k: 'nombre' }, { t: 'Fecha', v: d2 => fmt(d2.fecha) },
-        { t: 'Tamaño', k: 'tam' }, { t: 'Notas', v: d2 => d2.notas || '—' }
+        { t: 'Tipo', k: 'tipo' }, { t: 'Archivo', k: 'nombre' }, { t: 'Fecha', v: d2 => d2.fecha ? fmt(d2.fecha) : '—' },
+        { t: 'Tamaño', k: 'tam' }, { t: 'Notas', v: d2 => d2.notas || '—' },
+        { t: '', html: d2 => d2.ruta
+            ? '<div class="btn-row"><button class="btn sm" data-ver="' + esc(d2.ruta) + '">Ver</button>' +
+              '<button class="btn gh sm" data-bajar="' + esc(d2.ruta) + '" data-nom="' + esc(d2.nombre) + '">Descargar</button></div>'
+            : '<span class="chip nt">Sin archivo</span>' }
       ], x.docs, { vacio: 'Sin documentos ni evidencias registradas.' });
   }
 

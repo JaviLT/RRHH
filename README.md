@@ -4,7 +4,7 @@ Aplicación web interna de Zubex Industrial: expediente médico ocupacional, **E
 Médico Electrónico ZX** (análisis clínicos bajo lineamiento SQF), citas, vacaciones y banco de horas,
 y gestión documental de RRHH, con permisos distintos por nivel y por perfil.
 
-**Versión 2.6.0 · Equipo RMNC · Octubre 2026**
+**Versión 2.7.0 · Equipo RMNC · Octubre 2026**
 
 > **Trabaja únicamente con Supabase.** Ya no existe el modo demo ni ningún dato de ejemplo en el
 > código: todo lo que se ve viene de la base de datos real (proyecto `RRHH`). Las pruebas se hacen
@@ -12,6 +12,11 @@ y gestión documental de RRHH, con permisos distintos por nivel y por perfil.
 
 ## Qué hay de nuevo
 
+- **2.7.0** — **Documentos con archivo.** En el expediente, la pestaña *Documentos* abre (*Ver*) y descarga (*Descargar*) el PDF guardado en el almacenamiento privado
+  `documentos-medicos` (migración 39: bucket, políticas y columnas `ruta`, `mime`, `tam_bytes`). El médico ve todos; cada persona sólo los de su carpeta (`<nómina>/…`). El enlace es
+  firmado y dura 10 minutos. Los documentos se piden por persona (la lista global tenía tope de 1,000 filas). **Datos cargados:** se borraron los datos de demostración y se cargaron
+  139 historias clínicas, 137 consultas (feb–jul 2021) y 979 PDF de exámenes de 2025 sólo para quien se pudo identificar con seguridad. Registrar un documento nuevo desde la pantalla
+  sigue guardando sólo el nombre.
 - **2.6.0** — **Módulos desactivados por ahora** (interruptor `activo: false` en `MODULOS` de `app.js`): *Vacaciones y horas*, *Calendario*, *Recursos Humanos* e
   *Indicadores*. No salen en el menú ni en «Tus secciones» y abrir su dirección muestra «Módulo no habilitado». No se tocó ningún dato ni regla de la base; se reactivan
   quitando `activo: false`. La barra superior sólo muestra los accesos de módulos activos (hoy, *Cita médica*) y las tarjetas de saldo del Inicio ya no salen.

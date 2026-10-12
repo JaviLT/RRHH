@@ -6,7 +6,7 @@
   'use strict';
 
   const API = global.ZX_API;
-  const VERSION = '2.6.0';
+  const VERSION = '2.7.0';
 
   /* ---------------- Tipografía de marca ----------------
      El manual de marca pide Poppins con fallback a Segoe UI. Cargarla con un

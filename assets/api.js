@@ -348,6 +348,13 @@
     })(),
 
     documentos: (empleadoId) => sb(empleadoId ? cliente().from('documentos_medicos').select('*').eq('empleado', empleadoId) : cliente().from('documentos_medicos').select('*')).then(listaDesdeDB),
+    /* Enlace firmado (10 min) al PDF guardado en el almacenamiento privado. Sólo lo obtiene quien la base de datos autoriza:
+       el médico o la propia persona. `descargarComo` fuerza la descarga con ese nombre de archivo. */
+    urlDocumento: (ruta, descargarComo) => (async () => {
+      const { data, error } = await cliente().storage.from('documentos-medicos').createSignedUrl(ruta, 600, descargarComo ? { download: descargarComo } : undefined);
+      if (error || !data) throw new Error('No se pudo abrir el documento' + (error ? ': ' + error.message : '.'));
+      return data.signedUrl;
+    })(),
 
     guardarDocumento: (datos) => (async () => {
       const d2 = Object.assign({ id: nuevoId('DM'), fecha: hoy() }, datos);
