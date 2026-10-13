@@ -1561,6 +1561,7 @@
         { t: 'Folio', k: 'id' },
         { t: 'Fecha', v: x => fmtLargo(x.fecha) },
         { t: 'Hora', k: 'hora' },
+        { t: 'Tipo', html: x => chipTipoCita(x) },
         { t: 'Motivo', k: 'motivo' },
         { t: 'Estado', html: x => chip(x.estado) },
         { t: '', html: x => (x.estado === 'confirmada' && x.fecha >= hoyISO())
@@ -1579,27 +1580,34 @@
 
   /* Agenda del servicio médico: citas del día y de los próximos 7 días */
   let diaAgenda = null;
+  /* Tipo y duración de una cita (consulta 10 min / examen médico 20 min, según la configuración de la agenda) */
+  const duracionCita = c => c.duracionMin || (D.agenda && D.agenda.duracionMin) || 10;
+  const chipTipoCita = c => c.tipo === 'examen' ? '<span class="chip in">Examen médico · ' + duracionCita(c) + ' min</span>' : '<span class="chip nt">Consulta · ' + duracionCita(c) + ' min</span>';
+
   function agendaMedico() {
     if (!diaAgenda) diaAgenda = hoyISO();
     const dia = D.citas.filter(c => c.fecha === diaAgenda && c.estado !== 'cancelada').sort((a, b) => a.hora.localeCompare(b.hora));
     const semana = D.citas.filter(c => c.fecha >= hoyISO() && c.fecha <= sumaDias(hoyISO(), 6) && c.estado === 'confirmada');
-    const cap = D.agenda.horarios.length;
+    const atiende = D.agenda.diasHabiles.indexOf(new Date(diaAgenda + 'T12:00:00').getDay()) >= 0;
+    const cap = atiende ? D.agenda.horarios.length : 0;                                                    // un día sin servicio no tiene horarios
+    const ocupados = dia.reduce((n, c) => n + Math.max(1, Math.round(duracionCita(c) / D.agenda.duracionMin)), 0);   // un examen ocupa dos horarios
 
     main.innerHTML =
-      cab('Agenda del médico', fmtLargo(diaAgenda),
+      cab('Agenda del médico', fmtLargo(diaAgenda) + (atiende ? '' : ' · sin servicio ese día'),
         '<div class="btn-row"><button class="btn gh sm" id="a">‹ Día anterior</button>' +
         '<button class="btn gh sm" id="h">Hoy</button><button class="btn gh sm" id="s">Día siguiente ›</button></div>') +
       '<div class="grid g4">' +
         k('Citas del día', dia.length, 'Confirmadas y atendidas') +
         k('Próximos 7 días', semana.length, 'Citas confirmadas') +
-        k('Horarios del día', cap, 'Capacidad instalada') +
-        k('Ocupación', cap ? Math.round(dia.length / cap * 100) + '%' : '—', 'Del día seleccionado', cap && (dia.length / cap) > 0.8 ? 'dn' : 'gn') +
+        k('Horarios del día', cap, atiende ? 'De ' + D.agenda.horarios[0] + ' a ' + D.agenda.finServicio + ' h' : 'Sin servicio') +
+        k('Ocupación', cap ? Math.round(ocupados / cap * 100) + '%' : '—', 'Del día seleccionado', cap && (ocupados / cap) > 0.8 ? 'dn' : 'gn') +
       '</div>' +
       '<h2 class="sec-t">Citas del día</h2>' +
       tabla([
         { t: 'Hora', k: 'hora' },
         { t: 'Colaborador', v: c => nombreDe(c.empleado) },
         { t: 'Departamento', v: c => empDe(c.empleado).departamento || '' },
+        { t: 'Tipo', html: c => chipTipoCita(c) },
         { t: 'Motivo', k: 'motivo' },
         { t: 'Estado', html: c => chip(c.estado) },
         { t: '', html: c => c.estado === 'confirmada'
@@ -1610,10 +1618,11 @@
         { t: 'Fecha', v: c => fmtLargo(c.fecha) },
         { t: 'Hora', k: 'hora' },
         { t: 'Colaborador', v: c => nombreDe(c.empleado) },
+        { t: 'Tipo', html: c => chipTipoCita(c) },
         { t: 'Motivo', k: 'motivo' }
       ], semana.sort((a, b) => (a.fecha + a.hora).localeCompare(b.fecha + b.hora)), { vacio: 'Sin citas en la semana.' });
 
-    ZX.pie(main, 'La ocupación compara las citas del día contra los horarios configurados en la agenda del servicio médico.');
+    ZX.pie(main, 'La ocupación compara las citas del día contra los horarios configurados en la agenda del servicio médico; un examen médico ocupa dos horarios.');
     $('#a').addEventListener('click', () => { diaAgenda = sumaDias(diaAgenda, -1); agendaMedico(); });
     $('#s').addEventListener('click', () => { diaAgenda = sumaDias(diaAgenda, 1); agendaMedico(); });
     $('#h').addEventListener('click', () => { diaAgenda = hoyISO(); agendaMedico(); });

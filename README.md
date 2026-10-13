@@ -4,7 +4,7 @@ Aplicación web interna de Zubex Industrial: expediente médico ocupacional, **E
 Médico Electrónico ZX** (análisis clínicos bajo lineamiento SQF), citas, vacaciones y banco de horas,
 y gestión documental de RRHH, con permisos distintos por nivel y por perfil.
 
-**Versión 2.8.2 · Equipo RMNC · Octubre 2026**
+**Versión 2.9.0 · Equipo RMNC · Octubre 2026**
 
 > **Trabaja únicamente con Supabase.** Ya no existe el modo demo ni ningún dato de ejemplo en el
 > código: todo lo que se ve viene de la base de datos real (proyecto `RRHH`). Las pruebas se hacen
@@ -12,6 +12,11 @@ y gestión documental de RRHH, con permisos distintos por nivel y por perfil.
 
 ## Qué hay de nuevo
 
+- **2.9.0** — **Agenda del servicio médico:** lunes, miércoles y jueves, de 15:10 a 17:00; 11 horarios por día (15:10–16:50), **consulta de 10 min y examen médico de 20 min** (migración 45: `agenda_medico_config.duracion_examen_min`/`fin_servicio`,
+  `citas.tipo`/`duracion_min`, interruptor `config_portal.empleado_agenda_examen`). El trigger `citas_validar` rechaza en la base de datos las citas que se encimen, que no caigan en un horario de la agenda, en día sin servicio o
+  que terminen después del cierre, y fija la duración. El formulario de cita pide el tipo y ofrece sólo los horarios donde la cita completa cabe; la Agenda del médico y *Mis citas* muestran tipo y duración, y la ocupación cuenta un examen como
+  dos horarios. **Corrección de fondo:** un empleado no ve las citas ajenas, así que antes veía como libres horarios ya ocupados; ahora `citas_ocupadas(fecha)` (migración 46) devuelve sólo las horas ocupadas, sin datos de nadie. «Cambiar» una cita
+  libera primero la anterior (y la restablece si la nueva no se puede guardar).
 - **2.8.2** — **El cambio de contraseña ya no es obligatorio al entrar (modo de pruebas).** «Mi cuenta» sigue disponible para cambiarla voluntariamente. Lo controla `config_portal.exigir_cambio_clave` (migración 44; si falta
   el valor, SE EXIGE; sólo se cambia desde el SQL Editor y queda en la bitácora). La sesión guarda `cambioObligatorio` (= contraseña temporal **y** interruptor activado). El recordatorio de Inicio para Administración y servicio
   médico ahora enumera los controles apagados. **Antes de producción:** `Activar_Controles_de_Produccion.sql` (activa consentimiento y cambio de contraseña; sustituye a `Activar_Consentimiento_Obligatorio.sql`).

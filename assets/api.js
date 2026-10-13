@@ -519,26 +519,42 @@
     agenda: () => sb(cliente().from('agenda_medico_config').select('*').eq('id', true).single()).then(desdeDB),
     lista: (filtro) => sbTodo(() => conFiltro(cliente().from('citas').select('*'), filtro).order('id')).then(listaDesdeDB),
 
-    disponibilidad: (fecha) => (async () => {
+    /* Horarios libres de un día para un tipo de cita (consulta o examen). Un horario sólo está libre si la cita COMPLETA cabe:
+       que no se encime con otra y que termine antes del cierre del servicio. `ignorar` = cita que se está reemplazando. */
+    disponibilidad: (fecha, tipo, ignorar) => (async () => {
       const ag = await citas.agenda();
       const dia = new Date(fecha + 'T12:00:00').getDay();
       const habil = ag.diasHabiles.indexOf(dia) >= 0;
       const bloqueo = (ag.bloqueos || []).find(b => b.fecha === fecha);
-      const delDia = await citas.lista({ fecha });
-      const ocupadas = delDia.filter(c => c.estado !== 'cancelada').map(c => c.hora);
+      const ocupadas = await sb(cliente().rpc('citas_ocupadas', { p_fecha: fecha }));       // horas ocupadas de TODOS (sin nombres): un empleado no ve las citas ajenas
+      const min = h => parseInt(String(h).slice(0, 2), 10) * 60 + parseInt(String(h).slice(3, 5), 10);
+      const dur = tipo === 'examen' ? ag.duracionExamenMin : ag.duracionMin, corte = min(ag.finServicio || '23:59');
+      const ocupado = (ocupadas || []).filter(c => c.id !== ignorar).map(c => ({ ini: min(c.hora), fin: min(c.hora) + (c.duracion_min || ag.duracionMin) }));
       return {
-        fecha, habil, bloqueo: bloqueo ? bloqueo.motivo : null,
-        slots: ag.horarios.map(h => ({ hora: h, libre: habil && !bloqueo && ocupadas.indexOf(h) < 0 }))
+        fecha, habil, bloqueo: bloqueo ? bloqueo.motivo : null, duracion: dur,
+        slots: ag.horarios.map(h => { const i = min(h), f = i + dur; return { hora: h, libre: habil && !bloqueo && f <= corte && !ocupado.some(o => i < o.fin && o.ini < f) }; })
       };
     })(),
 
+    /* ¿Puede el empleado agendar exámenes médicos? (config_portal.empleado_agenda_examen; por omisión sí) */
+    empleadoAgendaExamen: () => sb(cliente().from('config_portal').select('valor').eq('clave', 'empleado_agenda_examen').maybeSingle()).then(f => !f || f.valor === 'true', () => true),
+
     agendar: (datos, op) => (async () => {
       const delDia = await citas.lista({ fecha: datos.fecha });
-      if (delDia.some(c => c.hora === datos.hora && c.estado !== 'cancelada')) throw new Error('Ese horario acaba de ocuparse. Elige otro.');
+      const disp = await citas.disponibilidad(datos.fecha, datos.tipo, op && op.ignorar);
+      if (!disp.habil) throw new Error('El servicio médico no atiende ese día.');
+      if (disp.bloqueo) throw new Error('Sin servicio: ' + disp.bloqueo);
+      const casilla = disp.slots.find(x => x.hora === datos.hora);
+      if (!casilla || !casilla.libre) throw new Error('Ese horario acaba de ocuparse. Elige otro.');
       if (delDia.some(c => c.empleado === datos.empleado && c.estado === 'confirmada' && c.id !== (op && op.ignorar))) throw new Error(datos.empleado === (sesionActual() || {}).id ? 'Ya tienes una cita confirmada ese día.' : 'Esta persona ya tiene una cita confirmada ese día.');
       const ag = await citas.agenda();
       const c = Object.assign({ id: nuevoId('A'), medico: ag.medico, estado: 'confirmada', creada: hoy() }, datos);
-      return desdeDB(await sb(cliente().from('citas').insert(haciaDB(c)).select().single()));
+      /* «Cambiar»: la cita que se reemplaza se libera primero (si la nueva se encima con ella, la base de datos la rechazaría);
+         si la nueva no se puede guardar, la anterior se restablece tal como estaba. */
+      const anterior = op && op.ignorar;
+      if (anterior) await sb(cliente().from('citas').update({ estado: 'cancelada' }).eq('id', anterior));
+      try { return desdeDB(await sb(cliente().from('citas').insert(haciaDB(c)).select().single())); }
+      catch (e) { if (anterior) await sb(cliente().from('citas').update({ estado: 'confirmada' }).eq('id', anterior)); throw e; }
     })(),
 
     cancelar: (id, motivo) => sb(cliente().from('citas').update({ estado: 'cancelada' }).eq('id', id).select().single()).then(desdeDB),

@@ -162,8 +162,12 @@
   async function cita(op) {
     if (!op || (typeof Event !== 'undefined' && op instanceof Event)) op = {};
     const paraOtro = !!op.empleado, pac = op.empleado || uid();
-    let ag, medico = '';
-    try { ag = await API.citas.agenda(); } catch (e) { return falla(e); }
+    let ag, medico = '', puedeExamen = true;
+    try { ag = await API.citas.agenda(); puedeExamen = paraOtro || await API.citas.empleadoAgendaExamen(); } catch (e) { return falla(e); }
+    let tipo = (op.tipo === 'examen' && puedeExamen) ? 'examen' : 'consulta';
+    const NOMBRES_DIA = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+    const lista = (a) => a.length > 1 ? a.slice(0, -1).join(', ') + ' y ' + a[a.length - 1] : (a[0] || '');
+    const diasTxt = lista(ag.diasHabiles.slice().sort((x, y) => ((x + 6) % 7) - ((y + 6) % 7)).map(d => NOMBRES_DIA[d]));
     if (ag.medico) { try { const m = await API.empleados.uno(ag.medico); medico = m ? m.nombre : ''; } catch (e) { /* sin nombre */ } }
     let fecha = null, token = 0;
     const proximoHabil = (f) => {
@@ -176,10 +180,13 @@
       titulo: paraOtro ? 'Agendar cita · ' + (op.nombre || pac) : 'Agendar cita médica',
       cuerpo:
         '<div class="disp-big" style="font-size:19px">' + esc(paraOtro ? (op.nombre || pac) : 'Servicio médico de empresa') + '</div>' +
-        '<div class="disp-sub" style="margin-bottom:4px">' + esc((paraOtro ? 'Nº ' + pac + ' · ' : (medico ? medico + ' · ' : '')) + 'consultas de ' + ag.duracionMin + ' minutos') + '</div>' +
+        '<div class="disp-sub" style="margin-bottom:4px">' + esc((paraOtro ? 'Nº ' + pac + ' · ' : (medico ? medico + ' · ' : '')) + 'consultas de ' + ag.duracionMin + ' min' + (puedeExamen ? ' · exámenes médicos de ' + ag.duracionExamenMin + ' min' : '')) + '</div>' +
+        (puedeExamen ? '<div class="field" style="margin:6px 0 10px"><label for="tipoCita">Tipo de cita</label><select id="tipoCita">' +
+          '<option value="consulta"' + (tipo === 'consulta' ? ' selected' : '') + '>Consulta (' + ag.duracionMin + ' min)</option>' +
+          '<option value="examen"' + (tipo === 'examen' ? ' selected' : '') + '>Examen médico (' + ag.duracionExamenMin + ' min)</option></select></div>' : '') +
         '<div class="disp-sub">Selecciona el día en el calendario</div>' +
         '<div id="cal"></div>' +
-        '<div class="fm-nota">Atención de lunes a viernes. Los días sin servicio aparecen deshabilitados.</div>' +
+        '<div class="fm-nota">Atención los ' + esc(diasTxt) + ', de ' + esc(ag.horarios[0]) + ' a ' + esc(ag.finServicio || '') + ' h. Los días sin servicio aparecen deshabilitados.</div>' +
         '<div class="frow" style="margin-top:12px">' +
           '<div class="field"><label>Fecha</label><input id="f" readonly placeholder="—"></div>' +
           '<div class="field"><label for="h">Hora</label><select id="h" disabled><option value="">Selecciona una fecha</option></select></div>' +
@@ -194,9 +201,9 @@
             if (!fecha || !hora) return toast('Selecciona fecha y hora.', 'wa');
             if (!motivo) return toast('Escribe el motivo de la consulta.', 'wa');
             try {
-              const nueva = await API.citas.agendar({ empleado: pac, fecha, hora, motivo }, { ignorar: op.reemplaza });
+              const nueva = await API.citas.agendar({ empleado: pac, fecha, hora, motivo, tipo }, { ignorar: op.reemplaza });
               cerrarModal();
-              toast((paraOtro ? 'Cita agendada para ' + (op.nombre || pac) : 'Cita confirmada') + ' el ' + fmt(fecha) + ' a las ' + hora + '.', 'ok');
+              toast((paraOtro ? 'Cita agendada para ' + (op.nombre || pac) : 'Cita confirmada') + ' el ' + fmt(fecha) + ' a las ' + hora + (tipo === 'examen' ? ' (examen médico, ' + ag.duracionExamenMin + ' min).' : '.'), 'ok');
               if (!op.encima) avisar();            // encima de otra ventana no se repinta la pantalla de fondo
               if (op.alAgendar) op.alAgendar(nueva);
             } catch (e) { toast(e.message, 'no'); }
@@ -208,7 +215,7 @@
       $('#f', body).value = fmt(f);
       sel.disabled = true; sel.innerHTML = '<option value="">Consultando disponibilidad…</option>'; nota.textContent = '';
       let d;
-      try { d = await API.citas.disponibilidad(f); } catch (e) { sel.innerHTML = '<option value="">—</option>'; return toast(e.message, 'no'); }
+      try { d = await API.citas.disponibilidad(f, tipo, op.reemplaza); } catch (e) { sel.innerHTML = '<option value="">—</option>'; return toast(e.message, 'no'); }
       if (yo !== token) return;                                        // se eligió otro día mientras tanto
       if (!d.habil) { sel.innerHTML = '<option value="">Sin servicio ese día</option>'; nota.textContent = 'El servicio médico no atiende ese día.'; return; }
       if (d.bloqueo) { sel.innerHTML = '<option value="">Sin servicio</option>'; nota.textContent = 'Sin servicio: ' + d.bloqueo; return; }
@@ -216,8 +223,14 @@
       if (!libres.length) { sel.innerHTML = '<option value="">Sin horarios disponibles</option>'; nota.textContent = 'No quedan horarios disponibles el ' + fmt(f) + '.'; return; }
       sel.innerHTML = '<option value="">Selecciona una hora</option>' + libres.map(s => '<option value="' + esc(s.hora) + '">' + esc(s.hora) + ' h</option>').join('');
       sel.disabled = false;
-      nota.textContent = libres.length + ' de ' + d.slots.length + ' horarios disponibles el ' + fmt(f) + '.';
+      nota.textContent = libres.length + ' de ' + d.slots.length + ' horarios disponibles el ' + fmt(f) + (tipo === 'examen' ? ' para un examen de ' + d.duracion + ' min.' : '.');
     }
+    const selTipo = $('#tipoCita', body);
+    if (selTipo) selTipo.addEventListener('change', () => {
+      tipo = selTipo.value;
+      const mo = $('#motivo', body); if (tipo === 'examen' && !mo.value) mo.value = 'Examen médico'; else if (tipo === 'consulta' && mo.value === 'Examen médico') mo.value = op.motivo || '';
+      pintaHoras(fecha);
+    });
     fecha = proximoHabil(hoyISO());
     calendario($('#cal', body), {
       valor: fecha, min: hoyISO(),
