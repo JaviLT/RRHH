@@ -8,8 +8,20 @@
   const root = document.getElementById('root');
 
   const ses0 = API.sesionActual();
-  if (ses0 && ses0.claveCambiada === false) location.replace('cuenta.html?cambio=1');      // contraseña temporal: primero se cambia
-  else if (ses0) portal(); else login();
+  if (ses0 && ses0.cambioObligatorio === true) location.replace('cuenta.html?cambio=1');      // contraseña temporal con el cambio obligatorio activado: primero se cambia
+  else if (ses0) portal().then(avisoModoPruebas); else login();
+
+  /* Recordatorio (sólo Administración y servicio médico) mientras haya controles de producción apagados. */
+  function avisoModoPruebas() {
+    const s = API.sesionActual(); if (!s || ['admin', 'medico'].indexOf(s.perfil) < 0) return;
+    Promise.all([API.privacidad.consentimientoObligatorio(), API.cambioClaveObligatorio()]).then(([consent, clave]) => {
+      const m = document.getElementById('zx-main');
+      const apagados = [!consent && 'el consentimiento del aviso de privacidad', !clave && 'el cambio obligatorio de la contraseña temporal'].filter(Boolean);
+      if (!apagados.length || !m || m.querySelector('.priv-pruebas')) return;
+      m.insertAdjacentHTML('afterbegin', '<div class="priv priv-pruebas">🧪 <div><b>Modo de pruebas:</b> no se está exigiendo ' + apagados.join(' ni ') + '. ' +
+        'Deben activarse antes de que el portal entre a producción (ver «Activar_Controles_de_Produccion.sql»).</div></div>');
+    });
+  }
   document.addEventListener('zx:datos', () => { if (API.sesionActual()) portal(true); });   // un formulario de la barra superior terminó
 
   /* ------------------------- LOGIN ------------------------- */

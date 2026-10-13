@@ -42,6 +42,7 @@
       ]);
       D = Object.assign(D, { consentimiento, misArco });
     }
+    D.exigeConsentimiento = await API.privacidad.consentimientoObligatorio();
   }
 
   let vista = vistas[0].id;
@@ -53,6 +54,12 @@
   function cab(t, sub, acciones) {
     return '<div class="page-head"><div><h1 class="page-t">' + esc(t) + '</h1>' +
            '<div class="page-sub">' + esc(sub || '') + '</div></div><div class="btn-row">' + (acciones || '') + '</div></div>';
+  }
+
+  function bannerPruebas() {
+    if (D.exigeConsentimiento !== false) return '';
+    return '<div class="priv">🧪 <div><b>Modo de pruebas.</b> Por ahora <b>no es obligatorio</b> otorgar el consentimiento para capturar la historia clínica. ' +
+      'Puedes leer el aviso y otorgarlo de todos modos; será obligatorio cuando el portal entre a producción.</div></div>';
   }
 
   function bannerBorrador() {
@@ -69,7 +76,7 @@
     const c = D.consentimiento;
     main.innerHTML =
       cab('Aviso de privacidad', 'Versión ' + esc(AVISO.version) + ' · actualizado ' + fmt(AVISO.actualizado)) +
-      bannerBorrador() +
+      bannerPruebas() + bannerBorrador() +
       '<div class="card"><div class="card-t">Texto del aviso</div>' +
         '<p style="font-size:13px;line-height:1.6">' + esc(AVISO.texto) + '</p>' +
         '<div class="frow" style="margin-top:10px">' +
@@ -169,6 +176,7 @@
 
     main.innerHTML =
       cab('Panel de privacidad', 'Evidencia de cumplimiento del deber de seguridad (LFPDPPP art. 18)') +
+      bannerPruebas() +
       '<div class="grid g4" style="margin-bottom:14px">' +
         k('Con consentimiento vigente', vigentes.length, 'versión ' + AVISO.version) +
         k('Sin consentimiento', sinConsentimiento.length, 'de ' + D.emps.length + ' colaboradores') +

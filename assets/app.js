@@ -6,7 +6,7 @@
   'use strict';
 
   const API = global.ZX_API;
-  const VERSION = '2.8.0';
+  const VERSION = '2.8.2';
 
   /* ---------------- Tipografía de marca ----------------
      El manual de marca pide Poppins con fallback a Segoe UI. Cargarla con un
@@ -358,8 +358,8 @@
   function requiereSesion(moduloId) {
     const s = sesionEfectiva();
     if (!s) { location.replace('index.html'); return null; }
-    /* Contraseña temporal: hasta que la persona la cambie sólo puede entrar a «Mi cuenta». */
-    if (s.claveCambiada === false && !/cuenta\.html$/.test(location.pathname)) { location.replace('cuenta.html?cambio=1'); return null; }
+    /* Contraseña temporal con el cambio obligatorio activado (interruptor exigir_cambio_clave): hasta que la persona la cambie sólo puede entrar a «Mi cuenta». */
+    if (s.cambioObligatorio === true && !/cuenta\.html$/.test(location.pathname)) { location.replace('cuenta.html?cambio=1'); return null; }
     if (moduloId && !puede(s, moduloId)) {
       const mod = MODULOS.find(m => m.id === moduloId) || {};
       const desactivado = mod.id && !moduloActivo(mod);

@@ -50,9 +50,9 @@
       API.medico.programa(), API.medico.vacunas(), API.medico.campanas(), API.medico.expedientes(),
       API.privacidad.consentimiento(sesion.id), API.citas.lista(), API.citas.agenda()
     ]);
-    const [resAnalisis, casosAnalisis, historias] = await Promise.all([API.analisis.resultados(), API.analisis.casos(), API.medico.historiasResumen()]);
+    const [resAnalisis, casosAnalisis, historias, exigeConsentimiento] = await Promise.all([API.analisis.resultados(), API.analisis.casos(), API.medico.historiasResumen(), API.privacidad.consentimientoObligatorio()]);
     D = { emps, consultas, mio, evaluaciones, riesgos, incapacidades, docs, programa, vacunas, campanas, expedientes,
-          resAnalisis, casosAnalisis, historias, consentimiento, citas, agenda };
+          resAnalisis, casosAnalisis, historias, exigeConsentimiento, consentimiento, citas, agenda };
   }
 
   let vista = vistas[0].id;
@@ -152,7 +152,7 @@
        consentimiento vigente no se muestra el formulario, se manda al
        aviso de privacidad. api.js repite esta validación al guardar,
        por si alguien llega al formulario de otra forma. */
-    if (!D.consentimiento) {
+    if (D.exigeConsentimiento && !D.consentimiento) {
       main.innerHTML =
         cab('Mi historia clínica', '') +
         '<div class="priv">🔒 <div><b>Necesitas otorgar tu consentimiento antes de continuar.</b> ' +
@@ -280,7 +280,7 @@
   async function editarHistoriaMedico(empId, encima) {
     const emp = empDe(empId);
     let consentimiento = true;
-    try { consentimiento = await API.medico.tieneConsentimiento(empId); } catch (e) { /* de todos modos lo valida la base al guardar */ }
+    try { if (D.exigeConsentimiento) consentimiento = await API.medico.tieneConsentimiento(empId); } catch (e) { /* de todos modos lo valida la base al guardar */ }
     if (!consentimiento) {
       modal({ encima: !!encima, titulo: 'Aún no se puede modificar',
         cuerpo: '<div class="priv">🔒 <div><b>' + esc(emp.nombre) + ' aún no ha otorgado su consentimiento vigente</b> para el tratamiento de sus datos de salud. ' +

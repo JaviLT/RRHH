@@ -8,7 +8,8 @@
   const API = window.ZX_API;
   const sesion = ZX.requiereSesion('cuenta');
   if (!sesion) return;
-  const forzado = sesion.claveCambiada === false;
+  const forzado = sesion.cambioObligatorio === true;               // obligatorio sólo cuando el interruptor exigir_cambio_clave está activado
+  const temporal = sesion.claveCambiada === false;
   const shell = ZX.montarShell('cuenta', 'Mi cuenta', []);
   if (!shell) return;
   const main = shell.main;
@@ -29,7 +30,8 @@
     const verificado = fx && (fx.totp || []).find(f => f.status === 'verified');
     main.innerHTML =
       '<div class="page-head"><div><h1 class="page-t">Mi cuenta</h1><div class="page-sub">' + esc(sesion.id + ' · ' + sesion.nombre) + '</div></div></div>' +
-      (forzado ? '<div class="priv" style="border-color:var(--wa)">🔑 <div><b>Tu contraseña es temporal.</b> Debes cambiarla para poder usar el portal. Elige una que sólo tú conozcas.</div></div>' : '') +
+      (forzado ? '<div class="priv" style="border-color:var(--wa)">🔑 <div><b>Tu contraseña es temporal.</b> Debes cambiarla para poder usar el portal. Elige una que sólo tú conozcas.</div></div>'
+        : temporal ? '<div class="priv">🔑 <div><b>Tu contraseña sigue siendo temporal.</b> Puedes cambiarla ahora; será obligatorio cuando el portal entre a producción.</div></div>' : '') +
       '<div class="card"><div class="card-t">Contraseña</div>' +
         '<form id="fc" autocomplete="off"><div class="frow">' +
           '<div class="field"><label for="c_act">Contraseña actual</label><input id="c_act" type="password" autocomplete="current-password" required></div>' +

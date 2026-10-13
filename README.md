@@ -4,7 +4,7 @@ Aplicación web interna de Zubex Industrial: expediente médico ocupacional, **E
 Médico Electrónico ZX** (análisis clínicos bajo lineamiento SQF), citas, vacaciones y banco de horas,
 y gestión documental de RRHH, con permisos distintos por nivel y por perfil.
 
-**Versión 2.8.0 · Equipo RMNC · Octubre 2026**
+**Versión 2.8.2 · Equipo RMNC · Octubre 2026**
 
 > **Trabaja únicamente con Supabase.** Ya no existe el modo demo ni ningún dato de ejemplo en el
 > código: todo lo que se ve viene de la base de datos real (proyecto `RRHH`). Las pruebas se hacen
@@ -12,6 +12,12 @@ y gestión documental de RRHH, con permisos distintos por nivel y por perfil.
 
 ## Qué hay de nuevo
 
+- **2.8.2** — **El cambio de contraseña ya no es obligatorio al entrar (modo de pruebas).** «Mi cuenta» sigue disponible para cambiarla voluntariamente. Lo controla `config_portal.exigir_cambio_clave` (migración 44; si falta
+  el valor, SE EXIGE; sólo se cambia desde el SQL Editor y queda en la bitácora). La sesión guarda `cambioObligatorio` (= contraseña temporal **y** interruptor activado). El recordatorio de Inicio para Administración y servicio
+  médico ahora enumera los controles apagados. **Antes de producción:** `Activar_Controles_de_Produccion.sql` (activa consentimiento y cambio de contraseña; sustituye a `Activar_Consentimiento_Obligatorio.sql`).
+- **2.8.1** — **Modo de pruebas del consentimiento.** Se deja de exigir el consentimiento del aviso de privacidad para capturar la historia clínica (pantalla *Mi historia clínica*, edición del médico y el candado
+  de la base). Lo controla `config_portal.exigir_consentimiento` (migración 43; si falta el valor, SE EXIGE), que sólo se cambia desde el SQL Editor y deja rastro en la bitácora (`config.modificada`). Mientras esté
+  apagado, Administración y el servicio médico ven un recordatorio. **Antes de producción:** ejecutar `Activar_Consentimiento_Obligatorio.sql`. El aviso, el consentimiento voluntario y los derechos ARCO no cambian.
 - **2.8.0** — **Pacientes** con la columna *Historia clínica* (Actualizada ≤ 12 meses / Desactualizada / Sin historia), filtro y totales; sin *Consultas* ni *Riesgos*. **El médico crea y modifica la
   historia clínica** (Ficha y atajo desde la consulta; motivo obligatorio; exige consentimiento vigente; migración 40: políticas `historia_*_medico`, columnas `actualizado_por`/`ultimo_motivo`, fecha y autor
   sellados por el servidor). **Documentos:** subir, reemplazar y eliminar con motivo (`estado`, `reemplaza`, `motivo_baja`; validación de tamaño, extensión y firma del archivo). **Trazabilidad:** auditoría de

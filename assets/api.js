@@ -183,6 +183,11 @@
     return completarLogin(data.user);
   }
 
+  /* ¿Se obliga a cambiar la contraseña temporal al entrar? Lo decide `config_portal.exigir_cambio_clave` (sólo se cambia desde el SQL Editor).
+     Si el valor falta o no se puede leer, se asume que SÍ se obliga. */
+  const cambioClaveObligatorio = () => sb(cliente().from('config_portal').select('valor').eq('clave', 'exigir_cambio_clave').maybeSingle())
+    .then(f => !f || f.valor === 'true', () => true);
+
   async function completarLogin(user) {
     const fila = await sb(cliente().from('empleados').select('*').eq('auth_user_id', user.id).maybeSingle());
     if (!fila) {
@@ -196,7 +201,7 @@
     const emp = desdeDB(fila);
     const sesion = {
       id: emp.id, nombre: emp.nombre, correo: emp.correo, direccion: emp.direccion, departamento: emp.departamento,
-      puesto: emp.puesto, nivel: emp.nivel, perfil: emp.perfil, claveCambiada: emp.claveCambiada, inicio: new Date().toISOString()
+      puesto: emp.puesto, nivel: emp.nivel, perfil: emp.perfil, claveCambiada: emp.claveCambiada, cambioObligatorio: emp.claveCambiada === false && await cambioClaveObligatorio(), inicio: new Date().toISOString()
     };
     sessionStorage.setItem(config.sesionKey, JSON.stringify(sesion));
     await refrescarCaches();
@@ -243,7 +248,7 @@
     if (e2) throw new Error(/same|different/i.test(e2.message) ? 'La nueva contraseña debe ser distinta de la actual.' : 'No se pudo cambiar la contraseña: ' + e2.message);
     await sb(cliente().rpc('marcar_clave_cambiada'));
     const ses = sesionActual();
-    if (ses) { ses.claveCambiada = true; sessionStorage.setItem(config.sesionKey, JSON.stringify(ses)); }
+    if (ses) { ses.claveCambiada = true; ses.cambioObligatorio = false; sessionStorage.setItem(config.sesionKey, JSON.stringify(ses)); }
   }
 
   /* ---------------- Empleados ---------------- */
@@ -683,6 +688,11 @@
       return filas && filas[0] ? desdeDB(filas[0]) : null;
     })(),
 
+    /* ¿Se exige el consentimiento? Lo decide el interruptor `config_portal.exigir_consentimiento` (sólo se cambia desde el SQL Editor).
+       Ante cualquier duda (no existe el valor, falla la consulta) se asume que SÍ se exige. */
+    consentimientoObligatorio: () => sb(cliente().from('config_portal').select('valor').eq('clave', 'exigir_consentimiento').maybeSingle())
+      .then(f => !f || f.valor === 'true', () => true),
+
     listaConsentimientos: () => sb(cliente().from('consentimientos').select('*')).then(listaDesdeDB),
 
     otorgar: (empleadoId) => (async () => {
@@ -770,7 +780,7 @@
   function perfilesSync() { return (leerCache(config.perfilesCacheKey) || []); }
 
   global.ZX_API = {
-    config, login, verificarMfa, mfa, cambiarClave, sesionActual, cerrarSesion, perfilesSync,
+    config, login, verificarMfa, mfa, cambiarClave, cambioClaveObligatorio, sesionActual, cerrarSesion, perfilesSync,
     empleados, vacaciones, calendario, medico, citas, rrhh, analisis, indicadores, auditoria, privacidad, admin
   };
 })(window);
